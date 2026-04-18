@@ -1,5 +1,5 @@
 # MS Integración multicanal
-
+Node-JS
 Microservicio encargado de la recepción, centralización y normalización de reclamos provenientes de distintos canales digitales.
 
 ## Responsabilidad principal
