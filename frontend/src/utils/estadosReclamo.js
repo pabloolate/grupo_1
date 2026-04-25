@@ -1,0 +1,9 @@
+export const ESTADOS_RECLAMO = [
+  'RECIBIDO',
+  'EN_REVISION',
+  'CLASIFICADO',
+  'DERIVADO',
+  'EN_PROCESO',
+  'RESUELTO',
+  'CERRADO',
+];

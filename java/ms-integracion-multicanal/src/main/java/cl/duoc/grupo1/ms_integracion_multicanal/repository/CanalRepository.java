@@ -1,0 +1,14 @@
+package cl.duoc.grupo1.ms_integracion_multicanal.repository;
+
+import cl.duoc.grupo1.ms_integracion_multicanal.model.Canal;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface CanalRepository extends JpaRepository<Canal, Long> {
+    Optional<Canal> findByNombre(String nombre);
+    List<Canal> findByActivoTrueOrderByNombreAsc();
+}
