@@ -1,131 +1,229 @@
-const axios = require('axios');
-const { normalizarTexto } = require('../funciones_secundarias');
+'use strict';
 
-function resolverUrlFlask() {
-  const url = String(process.env.URL_SENTIMENTALIZADOR_LOCAL || '').trim();
-  if (!url) throw new Error('URL_SENTIMENTALIZADOR_LOCAL no definida');
-  return url;
+require('dotenv').config();
+
+const axios = require('axios');
+
+function normalizarTexto(valor) {
+  return String(valor ?? '').trim();
 }
 
-function extraerComentariosNegativosDesdeRespuesta(data) {
+function obtenerUrlSentimentalizador() {
+  return normalizarTexto(process.env.URL_SENTIMENTALIZADOR_LOCAL) || 'http://127.0.0.1:5000/predecir';
+}
+
+function obtenerTimeoutSentimentalizador() {
+  const valor = Number(process.env.TIMEOUT_SENTIMENTALIZADOR_MS);
+
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return 30000;
+  }
+
+  return valor;
+}
+
+function obtenerIndiceComentarioDinamico(comentario) {
+  if (!comentario || typeof comentario !== 'object') {
+    return null;
+  }
+
+  const keyComentario = Object.keys(comentario).find((key) => /^comentario_\d+$/.test(key));
+  if (!keyComentario) {
+    return null;
+  }
+
+  const match = keyComentario.match(/^comentario_(\d+)$/);
+  return match ? match[1] : null;
+}
+
+function extraerTextoComentario(comentario) {
+  if (typeof comentario === 'string') {
+    return normalizarTexto(comentario);
+  }
+
+  if (!comentario || typeof comentario !== 'object') {
+    return '';
+  }
+
+  const indiceDinamico = obtenerIndiceComentarioDinamico(comentario);
+
+  if (indiceDinamico) {
+    return normalizarTexto(comentario[`comentario_${indiceDinamico}`]);
+  }
+
+  return normalizarTexto(
+    comentario.texto ||
+    comentario.comentario ||
+    comentario.text ||
+    comentario.descripcion ||
+    comentario.mensaje ||
+    ''
+  );
+}
+
+function extraerLikesComentario(comentario) {
+  if (!comentario || typeof comentario !== 'object') {
+    return 0;
+  }
+
+  const indiceDinamico = obtenerIndiceComentarioDinamico(comentario);
+
+  if (indiceDinamico) {
+    return Number(comentario[`likes_${indiceDinamico}`] ?? 0) || 0;
+  }
+
+  return Number(comentario.likes ?? comentario.me_gusta ?? comentario.likes_comentario ?? 0) || 0;
+}
+
+function extraerRepliesComentario(comentario) {
+  if (!comentario || typeof comentario !== 'object') {
+    return 0;
+  }
+
+  const indiceDinamico = obtenerIndiceComentarioDinamico(comentario);
+
+  if (indiceDinamico) {
+    return Number(comentario[`replies_${indiceDinamico}`] ?? 0) || 0;
+  }
+
+  return Number(comentario.replies ?? comentario.respuestas ?? comentario.total_respuestas ?? 0) || 0;
+}
+
+function normalizarSentimiento(valor) {
+  const texto = normalizarTexto(valor).toLowerCase();
+
+  if (texto === 'negativo' || texto === 'negative') {
+    return 'Negativo';
+  }
+
+  if (texto === 'ironico' || texto === 'irónico' || texto === 'ironic') {
+    return 'Negativo';
+  }
+
+  if (texto === 'positivo' || texto === 'positive') {
+    return 'Positivo';
+  }
+
+  if (texto === 'neutral') {
+    return 'Neutral';
+  }
+
+  return normalizarTexto(valor);
+}
+
+function construirComentariosParaFlask(post) {
+  const comentariosCrudos = Array.isArray(post?.comentarios) ? post.comentarios : [];
+  const comentariosLimpios = [];
+
+  for (const comentario of comentariosCrudos) {
+    const texto = extraerTextoComentario(comentario);
+
+    if (!texto) {
+      continue;
+    }
+
+    comentariosLimpios.push(texto);
+  }
+
+  return comentariosLimpios;
+}
+
+function construirComentarioNegativoNormalizado({ comentarioOriginal, textoComentario }) {
+  const texto = extraerTextoComentario(comentarioOriginal) || normalizarTexto(textoComentario);
+
+  return {
+    texto,
+    comentario: texto,
+    sentimiento: 'Negativo',
+    puntaje: comentarioOriginal?.puntaje ?? comentarioOriginal?.score ?? null,
+    likes: extraerLikesComentario(comentarioOriginal),
+    replies: extraerRepliesComentario(comentarioOriginal),
+    respuestas: extraerRepliesComentario(comentarioOriginal),
+  };
+}
+
+function unirResultadoConComentarioOriginal({ post, resultadosFlask }) {
+  const comentariosOriginales = Array.isArray(post?.comentarios) ? post.comentarios : [];
   const negativos = [];
 
-  const empujar = (item, fallback = {}) => {
-    if (!item || typeof item !== 'object') return;
-    const sentimiento = String(
-      item.sentimiento ||
-      item.sentimiento_comentario ||
-      item.clasificacion ||
-      item.label ||
-      fallback.sentimiento ||
-      ''
-    ).toLowerCase();
+  for (let i = 0; i < resultadosFlask.length; i += 1) {
+    const resultado = resultadosFlask[i] || {};
+    const sentimiento = normalizarSentimiento(resultado.sentimiento);
 
-    if (!sentimiento.includes('negativo') && !sentimiento.includes('ironico') && !sentimiento.includes('irónico')) return;
+    if (sentimiento !== 'Negativo') {
+      continue;
+    }
 
-    const texto = normalizarTexto(
-      item.comentario ||
-      item.texto ||
-      item.texto_comentario ||
-      item.comentario_texto ||
-      fallback.comentario ||
-      ''
+    const textoComentario = normalizarTexto(resultado.comentario);
+    const comentarioOriginal = comentariosOriginales[i];
+
+    negativos.push(
+      construirComentarioNegativoNormalizado({
+        comentarioOriginal,
+        textoComentario,
+      })
     );
+  }
 
-    if (!texto) return;
-
-    negativos.push({
-      texto_comentario: texto,
-      sentimiento: 'negativo',
-      puntaje: Number(item.puntaje || item.score || fallback.puntaje || 1) || 1,
-      likes: Number(item.likes ?? fallback.likes ?? 0) || 0,
-      replies: Number(item.replies ?? item.respuestas ?? fallback.replies ?? 0) || 0,
-    });
-  };
-
-  const candidatos = [];
-  if (Array.isArray(data)) candidatos.push(...data);
-  if (Array.isArray(data?.comentarios_negativos)) candidatos.push(...data.comentarios_negativos);
-  if (Array.isArray(data?.negativos)) candidatos.push(...data.negativos);
-  if (Array.isArray(data?.comentarios_con_sentimiento)) candidatos.push(...data.comentarios_con_sentimiento);
-  if (Array.isArray(data?.resultados)) candidatos.push(...data.resultados);
-  if (Array.isArray(data?.data?.resultados)) candidatos.push(...data.data.resultados);
-
-  for (const item of candidatos) empujar(item);
   return negativos;
 }
 
-function extraerComentariosPlano(post) {
-  const salida = [];
-  const comentarios = Array.isArray(post?.comentarios) ? post.comentarios : [];
+async function enviarComentariosAlFlask(comentarios) {
+  const url = obtenerUrlSentimentalizador();
+  const timeout = obtenerTimeoutSentimentalizador();
 
-  comentarios.forEach((item, index) => {
-    const keyComentario = Object.keys(item || {}).find((k) => /^comentario_\d+$/.test(k));
-    const id = keyComentario ? keyComentario.split('_')[1] : String(index + 1);
-    const texto = normalizarTexto(keyComentario ? item[keyComentario] : item?.texto || item?.comentario || '');
-    if (!texto) return;
-    salida.push({
-      texto,
-      likes: Number(item[`likes_${id}`] ?? item.likes ?? 0) || 0,
-      replies: Number(item[`replies_${id}`] ?? item.replies ?? item.respuestas ?? 0) || 0,
-      id,
-    });
+  const payload = {
+    comentarios,
+  };
+
+  console.log(`[FLASK] Enviando ${comentarios.length} comentarios a ${url}`);
+
+  const respuesta = await axios.post(url, payload, {
+    timeout,
+    headers: {
+      'Content-Type': 'application/json',
+    },
   });
 
-  return salida;
+  return respuesta.data;
 }
 
-async function analizarPostSoloNegativos(post, contexto = {}) {
-  const url = resolverUrlFlask();
-  const timeout = Math.max(1000, Number(process.env.TIMEOUT_SENTIMENTALIZADOR_MS || 30000));
-  const modoUnoAUno = String(process.env.FLASK_MODO_COMENTARIOS_UNO_A_UNO || 'false').toLowerCase() === 'true';
+async function analizarPostSoloNegativos(post, opciones = {}) {
+  const comentarios = construirComentariosParaFlask(post);
 
-  if (modoUnoAUno) {
-    const comentarios = extraerComentariosPlano(post);
-    const negativos = [];
+  const link = post?.link || post?.url_publicacion || 'sin_link';
 
-    for (const comentario of comentarios) {
-      const response = await axios.post(url, {
-        comentarios: [comentario.texto],
-        procedencia: contexto.procedencia || 'sentimentalizador_simple',
-        sistema: contexto.sistema || 'sentimentalizador_simple',
-        plataforma: contexto.plataforma || post.tipo_publicacion || post.plataforma || 'desconocida',
-      }, { timeout });
-
-      const parciales = extraerComentariosNegativosDesdeRespuesta(response.data)
-        .map((x) => ({ ...x, likes: comentario.likes, replies: comentario.replies, puntaje: 1 + comentario.likes + comentario.replies }));
-      negativos.push(...parciales);
-    }
-
-    return negativos;
+  if (!comentarios.length) {
+    console.warn(`[FLASK] No se enviará post sin comentarios extraíbles: ${link}`);
+    return [];
   }
 
-  const response = await axios.post(url, {
-    data_hijos: [post],
-    solo_negativos: true,
-    procedencia: contexto.procedencia || 'sentimentalizador_simple',
-    sistema: contexto.sistema || 'sentimentalizador_simple',
-    plataforma: contexto.plataforma || post.tipo_publicacion || post.plataforma || 'desconocida',
-  }, { timeout });
+  const respuestaFlask = await enviarComentariosAlFlask(comentarios);
 
-  let negativos = extraerComentariosNegativosDesdeRespuesta(response.data);
+  const resultados = Array.isArray(respuestaFlask?.resultados)
+    ? respuestaFlask.resultados
+    : [];
 
-  // Si Flask devuelve resultados sin likes/replies, los completamos por texto desde el DOM.
-  const domComentarios = extraerComentariosPlano(post);
-  negativos = negativos.map((negativo) => {
-    const match = domComentarios.find((c) => c.texto === negativo.texto_comentario);
-    return {
-      ...negativo,
-      likes: Number(negativo.likes || match?.likes || 0),
-      replies: Number(negativo.replies || match?.replies || 0),
-      puntaje: Number(negativo.puntaje || (1 + Number(match?.likes || 0) + Number(match?.replies || 0)) || 1),
-    };
+  if (!resultados.length) {
+    console.warn(`[FLASK] Respuesta sin resultados para: ${link}`);
+    return [];
+  }
+
+  const negativos = unirResultadoConComentarioOriginal({
+    post,
+    resultadosFlask: resultados,
+    opciones,
   });
+
+  console.log(`[FLASK] Recibidos=${resultados.length} negativos=${negativos.length} link=${link}`);
 
   return negativos;
 }
 
 module.exports = {
   analizarPostSoloNegativos,
-  extraerComentariosNegativosDesdeRespuesta,
+  enviarComentariosAlFlask,
+  construirComentariosParaFlask,
+  extraerTextoComentario,
+  normalizarSentimiento,
 };

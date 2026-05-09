@@ -1,4 +1,4 @@
-sfrom flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 from transformers import XLMRobertaForSequenceClassification, XLMRobertaTokenizer
 import os
 import re

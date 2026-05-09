@@ -1,225 +1,603 @@
-const { chromium } = require('playwright');
-const { spawn } = require('child_process');
-const path = require('path');
-const {
-  dormir,
-  killChromeProcesses,
-  normalizarTexto,
-  normalizarNumeroCompacto,
-  formateaFecha2,
-  hashSha256,
-  asegurarDirectorio,
-  log,
-  logWarn,
-} = require('../funciones_secundarias');
+'use strict';
 
-function normalizarUrlComparacion(u) {
-  return String(u || '').split('?')[0].replace(/\/+$/, '').trim();
+require('dotenv').config();
+
+const fs = require('fs');
+const { spawn } = require('child_process');
+const { chromium } = require('playwright');
+
+function normalizarTexto(valor) {
+  return String(valor ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function lanzarChromeTikTok({ cleanLink }) {
-  const esLinux = String(process.env.ENTORNO || 'windows').trim().toLowerCase() === 'linux';
-  const chromePath = String(process.env.CHROME_PATH || '').trim();
-  const puerto = String(process.env.PUERTO_DEBUG_CHROME || '9222').trim();
-  const userDataDir = String(process.env.USER_DATA_DIR || path.join(process.cwd(), 'chrome_profile')).trim();
-  const plantilla = String(esLinux ? process.env.COMANDO_CHROME_LINUX_TEMPLATE || '' : process.env.COMANDO_CHROME_WINDOWS_TEMPLATE || '').trim();
+function dormir(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  const comando = plantilla
-    ? plantilla
-        .replaceAll('{CHROME_PATH}', chromePath)
-        .replaceAll('{PUERTO_DEBUG_CHROME}', puerto)
-        .replaceAll('{USER_DATA_DIR}', userDataDir)
-        .replaceAll('{CLEAN_LINK}', cleanLink)
-    : `"${chromePath}" --remote-debugging-port=${puerto} --user-data-dir="${userDataDir}" --new-window "${cleanLink}"`;
+function leerNumeroEnv(nombre, valorDefecto) {
+  const numero = Number(process.env[nombre]);
 
-  const child = spawn(comando, {
-    shell: true,
+  if (!Number.isFinite(numero)) {
+    return valorDefecto;
+  }
+
+  return numero;
+}
+
+function parseNumeroCompacto(valor) {
+  const texto = String(valor || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/,/g, '.');
+
+  const match = texto.match(/([\d.]+)\s*([kmb])?/i);
+
+  if (!match) {
+    const numero = parseInt(texto.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(numero) ? numero : 0;
+  }
+
+  let numero = parseFloat(match[1] || '0');
+  const sufijo = String(match[2] || '').toLowerCase();
+
+  if (sufijo === 'k') numero *= 1000;
+  else if (sufijo === 'm') numero *= 1000000;
+  else if (sufijo === 'b') numero *= 1000000000;
+
+  return Number.isFinite(numero) ? Math.round(numero) : 0;
+}
+
+function resolverChromePath() {
+  const desdeEnv = normalizarTexto(process.env.CHROME_PATH);
+
+  if (desdeEnv && fs.existsSync(desdeEnv)) {
+    return desdeEnv;
+  }
+
+  const candidatos = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+
+  for (const candidato of candidatos) {
+    if (fs.existsSync(candidato)) {
+      return candidato;
+    }
+  }
+
+  return desdeEnv || 'chrome';
+}
+
+function resolverUserDataDir() {
+  const userDataDir = normalizarTexto(process.env.USER_DATA_DIR) || 'C:\\clone';
+
+  if (!fs.existsSync(userDataDir)) {
+    fs.mkdirSync(userDataDir, { recursive: true });
+  }
+
+  return userDataDir;
+}
+
+function resolverPuertoDebug() {
+  return leerNumeroEnv('PUERTO_DEBUG_CHROME', 9222);
+}
+
+async function puertoDebugDisponible(puerto) {
+  try {
+    const respuesta = await fetch(`http://127.0.0.1:${puerto}/json/version`);
+    return respuesta.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function abrirChromeDebugVisible(urlInicial = 'about:blank') {
+  const chromePath = resolverChromePath();
+  const userDataDir = resolverUserDataDir();
+  const puerto = resolverPuertoDebug();
+
+  const args = [
+    `--remote-debugging-port=${puerto}`,
+    `--user-data-dir=${userDataDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-popup-blocking',
+    '--disable-notifications',
+    '--start-maximized',
+    urlInicial,
+  ];
+
+  console.log(`[TIKTOK][PLAYWRIGHT] Abriendo Chrome visible CDP puerto=${puerto}`);
+  console.log(`[TIKTOK][PLAYWRIGHT] Chrome=${chromePath}`);
+  console.log(`[TIKTOK][PLAYWRIGHT] Perfil=${userDataDir}`);
+
+  const proceso = spawn(chromePath, args, {
     detached: true,
     stdio: 'ignore',
-    ...(esLinux ? {} : { windowsHide: true }),
-  });
-  child.unref();
-}
-
-async function conectarCdpConReintentos({ intentos = 25, esperaMs = 1000 } = {}) {
-  const puerto = String(process.env.PUERTO_DEBUG_CHROME || '9222').trim();
-  const urlCdp = `http://127.0.0.1:${puerto}`;
-  let ultimoError = null;
-
-  for (let i = 0; i < intentos; i++) {
-    try {
-      return await chromium.connectOverCDP(urlCdp);
-    } catch (error) {
-      ultimoError = error;
-      await dormir(esperaMs);
-    }
-  }
-
-  throw ultimoError || new Error(`No se pudo conectar a CDP ${urlCdp}`);
-}
-
-async function obtenerPaginaTikTokActiva(browserCdp, cleanLink) {
-  const objetivo = normalizarUrlComparacion(cleanLink);
-
-  for (let ronda = 0; ronda < 20; ronda++) {
-    for (const context of browserCdp.contexts()) {
-      const paginas = context.pages();
-      let page = paginas.find((p) => normalizarUrlComparacion(p.url()) === objetivo);
-      if (page) return page;
-      page = paginas.find((p) => String(p.url() || '').includes('tiktok.com') && String(p.url() || '').includes('/video/'));
-      if (page) return page;
-      page = [...paginas].reverse().find((p) => String(p.url() || '').includes('tiktok.com'));
-      if (page) return page;
-    }
-    await dormir(800);
-  }
-
-  throw new Error(`No se encontró página TikTok activa para ${cleanLink}`);
-}
-
-async function capturarImagenTikTok(page, cleanLink) {
-  try {
-    const base = process.env.DIR_IMAGENES || path.join(process.cwd(), 'imagenes');
-    const carpeta = asegurarDirectorio(path.join(base, 'tiktok', 'capturas'));
-    const ruta = path.join(carpeta, `${hashSha256(cleanLink).slice(0, 24)}.png`);
-    await page.screenshot({ path: ruta, fullPage: false }).catch(() => null);
-    return ruta;
-  } catch {
-    return null;
-  }
-}
-
-async function scrapeTikTokComentariosEnPagina(page, cleanLink, viewsItem = 0) {
-  await page.bringToFront().catch(() => {});
-  await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
-  await dormir(2500);
-
-  // Intento abrir panel o asegurar carga de comentarios.
-  try {
-    await page.mouse.wheel(0, 700);
-    await dormir(1000);
-  } catch {}
-
-  const payload = await page.evaluate(() => {
-    const clean = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
-    const parseNum = (txt) => {
-      const t = clean(txt).toLowerCase().replace(/,/g, '.');
-      const m = t.match(/(\d+(?:\.\d+)?)(\s*[kmb])?/i);
-      if (!m) {
-        const n = parseInt(t.replace(/[^\d]/g, ''), 10);
-        return Number.isFinite(n) ? n : 0;
-      }
-      let n = parseFloat(m[1] || '0') || 0;
-      const s = String(m[2] || '').trim().toLowerCase();
-      if (s === 'k') n *= 1000;
-      if (s === 'm') n *= 1000000;
-      if (s === 'b') n *= 1000000000;
-      return Math.round(n);
-    };
-
-    const descripcion = clean(
-      document.querySelector('[data-e2e="browse-video-desc"]')?.innerText ||
-      document.querySelector('[data-e2e="video-desc"]')?.innerText ||
-      document.querySelector('h1[data-e2e="browse-video-desc"]')?.innerText ||
-      document.querySelector('meta[property="og:description"]')?.content ||
-      ''
-    );
-
-    const fechaRaw = clean(
-      document.querySelector('[data-e2e="browser-nickname"] span:last-child')?.innerText ||
-      document.querySelector('span[data-e2e="browser-nickname"]')?.innerText ||
-      ''
-    );
-
-    const likes = parseNum(
-      document.querySelector('[data-e2e="like-count"]')?.innerText ||
-      document.querySelector('strong[data-e2e="like-count"]')?.innerText ||
-      ''
-    );
-
-    const imagen =
-      document.querySelector('meta[property="og:image"]')?.content ||
-      document.querySelector('video')?.poster ||
-      '';
-
-    const comentarios = [];
-    const vistos = new Set();
-    const nodos = Array.from(document.querySelectorAll(
-      '[data-e2e="comment-level-1"], [data-e2e="comment-item"], div[class*="DivCommentItemContainer"], div[class*="CommentItem"]'
-    ));
-
-    let idx = 1;
-    for (const nodo of nodos) {
-      const texto = clean(
-        nodo.querySelector('[data-e2e="comment-level-1-text"]')?.innerText ||
-        nodo.querySelector('p[data-e2e="comment-level-1-text"]')?.innerText ||
-        nodo.querySelector('span[data-e2e="comment-level-1-text"]')?.innerText ||
-        nodo.querySelector('p')?.innerText ||
-        ''
-      );
-      if (!texto || texto.length < 2 || vistos.has(texto)) continue;
-      vistos.add(texto);
-
-      const likesComentario = parseNum(
-        nodo.querySelector('[data-e2e="comment-like-count"]')?.innerText ||
-        nodo.querySelector('span[class*="SpanCount"]')?.innerText ||
-        ''
-      );
-
-      const replies = parseNum(
-        nodo.querySelector('[data-e2e="view-more-1"]')?.innerText ||
-        nodo.innerText?.match(/View (\d+) repl/i)?.[1] ||
-        0
-      );
-
-      comentarios.push({ [`comentario_${idx}`]: texto, [`likes_${idx}`]: likesComentario, [`replies_${idx}`]: replies });
-      idx++;
-    }
-
-    return { descripcion, fechaRaw, likes, imagen, comentarios };
+    windowsHide: false,
   });
 
-  if (!payload || !Array.isArray(payload.comentarios) || !payload.comentarios.length) return null;
+  proceso.unref();
 
-  const rutaCaptura = await capturarImagenTikTok(page, cleanLink);
+  return proceso;
+}
+
+async function asegurarChromeDebug(urlInicial = 'about:blank') {
+  const puerto = resolverPuertoDebug();
+
+  if (await puertoDebugDisponible(puerto)) {
+    return;
+  }
+
+  abrirChromeDebugVisible(urlInicial);
+
+  const intentos = leerNumeroEnv('CDP_INTENTOS_CONEXION', 30);
+  const esperaMs = leerNumeroEnv('CDP_ESPERA_MS', 1000);
+
+  for (let intento = 1; intento <= intentos; intento += 1) {
+    if (await puertoDebugDisponible(puerto)) {
+      console.log(`[TIKTOK][PLAYWRIGHT] CDP listo en puerto ${puerto}`);
+      return;
+    }
+
+    await dormir(esperaMs);
+  }
+
+  throw new Error(`No pude levantar Chrome con remote-debugging-port=${puerto}`);
+}
+
+async function conectarPlaywrightCDP(urlInicial) {
+  const puerto = resolverPuertoDebug();
+
+  await asegurarChromeDebug(urlInicial);
+
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${puerto}`);
+
+  let context = browser.contexts()[0];
+
+  if (!context) {
+    context = await browser.newContext({
+      viewport: null,
+    });
+  }
+
+  let page = context.pages().find((pagina) => {
+    const actual = pagina.url();
+    return actual && actual !== 'about:blank';
+  });
+
+  if (!page) {
+    page = context.pages()[0] || await context.newPage();
+  }
 
   return {
-    plataforma: 'tiktok',
-    tipo_publicacion: 'tiktok',
-    link: normalizarUrlComparacion(cleanLink),
-    descripcion: normalizarTexto(payload.descripcion || ''),
-    fecha: formateaFecha2(payload.fechaRaw),
-    hora: null,
-    likes: Number(payload.likes || 0),
-    views: Number(viewsItem || 0),
-    imagen: payload.imagen || '',
-    ruta_imagen_local: rutaCaptura,
-    comentarios: payload.comentarios,
+    browser,
+    context,
+    page,
   };
 }
 
-async function scrapearTikTokVideoConPlaywright({ link, views = 0 } = {}) {
-  const cleanLink = normalizarUrlComparacion(link);
-  let browser = null;
-  let page = null;
+async function extraerDataVideoTikTok(page) {
+  let dataVideo = null;
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= 3; intento += 1) {
+    try {
+      dataVideo = await page.evaluate(() => {
+        const root = document;
+
+        const texto = (el) => String(el?.textContent || '').replace(/\s+/g, ' ').trim();
+
+        const normalizarNumero = (valor) => {
+          const txt = String(valor || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/,/g, '.');
+
+          const match = txt.match(/([\d.]+)\s*([kmb])?/i);
+
+          if (!match) {
+            const numero = parseInt(txt.replace(/[^\d]/g, ''), 10);
+            return Number.isFinite(numero) ? numero : 0;
+          }
+
+          let numero = parseFloat(match[1] || '0');
+          const sufijo = String(match[2] || '').toLowerCase();
+
+          if (sufijo === 'k') numero *= 1000;
+          else if (sufijo === 'm') numero *= 1000000;
+          else if (sufijo === 'b') numero *= 1000000000;
+
+          return Number.isFinite(numero) ? Math.round(numero) : 0;
+        };
+
+        const extraerDescripcion = () => {
+          const candidatos = [
+            '[data-e2e="browse-video-desc"]',
+            '[data-e2e="video-desc"]',
+            'div[data-e2e="browse-video-desc"]',
+            'h1[data-e2e="browse-video-desc"]',
+          ];
+
+          for (const selector of candidatos) {
+            const el = root.querySelector(selector);
+            const txt = texto(el);
+            if (txt) return txt;
+          }
+
+          const metas = [
+            'meta[property="og:description"]',
+            'meta[name="description"]',
+          ];
+
+          for (const selector of metas) {
+            const el = root.querySelector(selector);
+            const txt = String(el?.getAttribute('content') || '').trim();
+            if (txt) return txt;
+          }
+
+          return '';
+        };
+
+        const extraerLikesRaw = () => {
+          const candidatos = [
+            '[data-e2e="browse-like-count"]',
+            '[data-e2e="like-count"]',
+            '[data-e2e="video-like-count"]',
+          ];
+
+          for (const selector of candidatos) {
+            const el = root.querySelector(selector);
+            const txt = texto(el);
+            if (txt) return txt;
+          }
+
+          return '0';
+        };
+
+        const extraerComentariosRaw = () => {
+          const comentarioBtn =
+            root.querySelector('button[data-e2e="browse-comment-icon"]') ||
+            root.querySelector('button[data-e2e="comment-icon"]') ||
+            root.querySelector('[data-e2e="comment-count"]')?.closest('button') ||
+            null;
+
+          const candidatos = [
+            '[data-e2e="browse-comment-count"]',
+            '[data-e2e="comment-count"]',
+            '[data-e2e="video-comment-count"]',
+          ];
+
+          for (const selector of candidatos) {
+            const el = root.querySelector(selector);
+            const txt = texto(el);
+            if (txt) {
+              return {
+                hay_boton_comentarios: !!comentarioBtn,
+                comentarios_raw_ui: txt,
+                comentarios_normalizados: normalizarNumero(txt),
+              };
+            }
+          }
+
+          return {
+            hay_boton_comentarios: !!comentarioBtn,
+            comentarios_raw_ui: '0',
+            comentarios_normalizados: 0,
+          };
+        };
+
+        const extraerFecha = () => {
+          const fechaTime =
+            root.querySelector('time') ||
+            root.querySelector('[datetime]') ||
+            null;
+
+          if (fechaTime) {
+            const raw = String(fechaTime.getAttribute('datetime') || fechaTime.textContent || '').trim();
+            if (raw) return raw;
+          }
+
+          const meta =
+            root.querySelector('meta[property="article:published_time"]') ||
+            root.querySelector('meta[property="og:video:release_date"]');
+
+          return String(meta?.getAttribute('content') || '').trim();
+        };
+
+        const extraerThumbnail = () => {
+          const video = root.querySelector('video');
+
+          if (video) {
+            const poster = String(video.getAttribute('poster') || '').trim();
+            if (poster) return poster;
+          }
+
+          const meta =
+            root.querySelector('meta[property="og:image"]') ||
+            root.querySelector('meta[name="twitter:image"]');
+
+          const metaImg = String(meta?.getAttribute('content') || '').trim();
+          if (metaImg) return metaImg;
+
+          const img = root.querySelector('img');
+          return String(img?.getAttribute('src') || '').trim();
+        };
+
+        const comentariosInfo = extraerComentariosRaw();
+
+        return {
+          link: root.querySelector('link[rel="canonical"]')?.getAttribute('href') || location.href,
+          descripcion: extraerDescripcion(),
+          likes_raw: extraerLikesRaw(),
+          likes_normalizados: normalizarNumero(extraerLikesRaw()),
+          fecha: extraerFecha(),
+          thumbnail: extraerThumbnail(),
+          comentarios_raw_ui: comentariosInfo.comentarios_raw_ui,
+          comentarios_normalizados: comentariosInfo.comentarios_normalizados,
+          hay_boton_comentarios: comentariosInfo.hay_boton_comentarios,
+        };
+      });
+
+      if (dataVideo) {
+        return dataVideo;
+      }
+    } catch (error) {
+      ultimoError = error;
+      console.warn(`[TIKTOK][PLAYWRIGHT] extraerDataVideo intento ${intento}/3 falló: ${error.message}`);
+      try {
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+      } catch (_) {}
+      await dormir(1500);
+    }
+  }
+
+  throw ultimoError || new Error('No se pudo extraer dataVideo de TikTok');
+}
+
+async function abrirPanelComentariosTikTok(page, totalComentariosDetectados) {
+  if (totalComentariosDetectados <= 0) {
+    return false;
+  }
 
   try {
-    await killChromeProcesses();
-    lanzarChromeTikTok({ cleanLink });
-    await dormir(4000);
-    browser = await conectarCdpConReintentos();
-    page = await obtenerPaginaTikTokActiva(browser, cleanLink);
-    return await scrapeTikTokComentariosEnPagina(page, cleanLink, views);
+    await page.evaluate(() => {
+      const boton =
+        document.querySelector('button[data-e2e="browse-comment-icon"]') ||
+        document.querySelector('button[data-e2e="comment-icon"]') ||
+        document.querySelector('[data-e2e="comment-count"]')?.closest('button') ||
+        null;
+
+      if (boton) {
+        boton.click();
+        return true;
+      }
+
+      return false;
+    });
+
+    await dormir(1500);
+
+    try {
+      await page.waitForFunction(() => {
+        return !!(
+          document.querySelector('div[class*="DivCommentObjectWrapper"]') ||
+          document.querySelector('div[class*="DivCommentListContainer"]') ||
+          document.querySelector('[data-e2e="comment-level-1"]') ||
+          document.querySelector('[data-e2e="comment-item"]') ||
+          document.querySelector('[data-e2e="comment-text"]')
+        );
+      }, { timeout: leerNumeroEnv('TIKTOK_ESPERA_COMENTARIOS_TIMEOUT_MS', 12000) });
+
+      return true;
+    } catch (_) {}
+
+    try {
+      await page.keyboard.press('End');
+      await dormir(1200);
+      await page.keyboard.press('PageDown');
+      await dormir(1200);
+
+      return await page.evaluate(() => {
+        return !!(
+          document.querySelector('div[class*="DivCommentObjectWrapper"]') ||
+          document.querySelector('div[class*="DivCommentListContainer"]') ||
+          document.querySelector('[data-e2e="comment-level-1"]') ||
+          document.querySelector('[data-e2e="comment-item"]') ||
+          document.querySelector('[data-e2e="comment-text"]')
+        );
+      });
+    } catch (_) {
+      return false;
+    }
   } catch (error) {
-    logWarn(`[TIKTOK][PLAYWRIGHT] Falló ${cleanLink}: ${error.message}`);
-    return null;
+    console.warn(`[TIKTOK][PLAYWRIGHT] No pude abrir panel de comentarios: ${error.message}`);
+    return false;
+  }
+}
+
+async function scrollearPanelComentariosTikTok(page) {
+  try {
+    await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const posiblesContenedores = [
+        document.querySelector('div[class*="DivCommentListContainer"]'),
+        document.querySelector('div[class*="DivCommentContainer"]'),
+        document.querySelector('[data-e2e="comment-list"]'),
+      ].filter(Boolean);
+
+      const contenedor = posiblesContenedores[0] || document.scrollingElement || document.body;
+
+      for (let i = 0; i < 6; i += 1) {
+        try {
+          contenedor.scrollTop = contenedor.scrollHeight;
+        } catch (_) {}
+
+        window.scrollBy(0, 800);
+        await sleep(700);
+      }
+    });
+  } catch (_) {}
+}
+
+async function extraerComentariosDesdePanelTikTok(page) {
+  return await page.evaluate(() => {
+    const wrappers = Array.from(
+      document.querySelectorAll(
+        [
+          'div[class*="DivCommentObjectWrapper"]',
+          'div[class*="CommentItem"]',
+          '[data-e2e="comment-level-1"]',
+          '[data-e2e="comment-item"]',
+          'div[data-e2e="comment-list"] [data-e2e="comment-text"]',
+        ].join(', ')
+      )
+    );
+
+    const salida = [];
+    const vistos = new Set();
+
+    for (const wrapper of wrappers) {
+      const esNodoTextoDirecto = wrapper?.matches?.('[data-e2e="comment-text"]');
+
+      const textoComentario = esNodoTextoDirecto
+        ? String(wrapper.textContent || '').replace(/\s+/g, ' ').trim()
+        : String(
+            wrapper.querySelector?.('[data-e2e="comment-text"]')?.textContent ||
+            wrapper.querySelector?.('p')?.textContent ||
+            wrapper.querySelector?.('span')?.textContent ||
+            ''
+          ).replace(/\s+/g, ' ').trim();
+
+      if (!textoComentario) continue;
+      if (vistos.has(textoComentario)) continue;
+
+      vistos.add(textoComentario);
+
+      const likesRaw = esNodoTextoDirecto
+        ? '0'
+        : String(
+            wrapper.querySelector?.('[data-e2e="comment-like-count"]')?.textContent ||
+            wrapper.querySelector?.('[class*="like-count"]')?.textContent ||
+            wrapper.querySelector?.('strong')?.textContent ||
+            '0'
+          ).replace(/\s+/g, ' ').trim();
+
+      const repliesRaw = esNodoTextoDirecto
+        ? '0'
+        : String(
+            wrapper.querySelector?.('[data-e2e="comment-reply-count"]')?.textContent ||
+            wrapper.querySelector?.('[class*="reply"]')?.textContent ||
+            '0'
+          ).replace(/\s+/g, ' ').trim();
+
+      const indice = salida.length + 1;
+
+      salida.push({
+        [`comentario_${indice}`]: textoComentario,
+        [`likes_${indice}`]: likesRaw,
+        [`replies_${indice}`]: repliesRaw,
+      });
+    }
+
+    return salida;
+  });
+}
+
+async function scrapearTikTokVideoConPlaywright(video = {}) {
+  const link = normalizarTexto(video.link || video.url || video.url_publicacion);
+  const views = video.views ?? video.vistas ?? 0;
+
+  if (!link) {
+    return {
+      ...video,
+      link: '',
+      comentarios: [],
+    };
+  }
+
+  let browser = null;
+
+  try {
+    const conexion = await conectarPlaywrightCDP(link);
+    browser = conexion.browser;
+
+    const page = conexion.page;
+
+    console.log(`[TIKTOK][PLAYWRIGHT] Abriendo video visible: ${link}`);
+
+    await page.goto(link, {
+      waitUntil: 'domcontentloaded',
+      timeout: leerNumeroEnv('TIKTOK_GOTO_TIMEOUT_MS', 60000),
+    });
+
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
+    } catch (_) {}
+
+    await dormir(leerNumeroEnv('TIKTOK_ESPERA_INICIAL_MS', 2500));
+
+    const dataVideo = await extraerDataVideoTikTok(page);
+
+    const totalComentariosDetectados = Number.isFinite(Number(dataVideo.comentarios_normalizados))
+      ? Number(dataVideo.comentarios_normalizados)
+      : parseNumeroCompacto(dataVideo.comentarios_raw_ui);
+
+    const panelComentariosAbierto = await abrirPanelComentariosTikTok(page, totalComentariosDetectados);
+
+    if (panelComentariosAbierto) {
+      await scrollearPanelComentariosTikTok(page);
+    }
+
+    const comentarios = panelComentariosAbierto
+      ? await extraerComentariosDesdePanelTikTok(page)
+      : [];
+
+    console.log(
+      `[TIKTOK][PLAYWRIGHT] raw_ui=${totalComentariosDetectados} panel=${panelComentariosAbierto} comentarios=${comentarios.length} link=${link}`
+    );
+
+    return {
+      ...video,
+      plataforma: 'tiktok',
+      tipo_publicacion: 'tiktok',
+      link: normalizarTexto(dataVideo.link || link),
+      url_publicacion: normalizarTexto(dataVideo.link || link),
+      descripcion: normalizarTexto(dataVideo.descripcion),
+      likes: Number(dataVideo.likes_normalizados || 0),
+      fecha: normalizarTexto(dataVideo.fecha),
+      hora: null,
+      imagen_link: normalizarTexto(dataVideo.thumbnail),
+      views: Number(views || 0),
+      comentarios,
+    };
+  } catch (error) {
+    console.warn(`[TIKTOK][PLAYWRIGHT] Falló ${link}: ${error.message}`);
+
+    return {
+      ...video,
+      plataforma: 'tiktok',
+      tipo_publicacion: 'tiktok',
+      link,
+      url_publicacion: link,
+      views,
+      comentarios: [],
+      error_playwright: error.message,
+    };
   } finally {
-    if (page) await page.close().catch(() => {});
-    if (browser) await browser.close().catch(() => {});
-    await killChromeProcesses();
+    try {
+      if (browser) {
+        await browser.close();
+      }
+    } catch (_) {}
   }
 }
 
 module.exports = {
   scrapearTikTokVideoConPlaywright,
+  asegurarChromeDebug,
+  abrirChromeDebugVisible,
 };

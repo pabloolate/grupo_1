@@ -1,1 +1,4 @@
 /flask_servicio/.venv
+/scraping_servidor/imagenes
+/scraping_servidor/node_modules
+scraping_servidor/.env

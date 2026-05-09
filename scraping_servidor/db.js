@@ -1,30 +1,37 @@
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const dotenv = require('dotenv');
+
 dotenv.config();
 
 let pool = null;
 
+function leerBooleano(valor, defecto = false) {
+  if (valor === undefined || valor === null || valor === '') return defecto;
+  return ['true', '1', 'yes', 'si', 'sí'].includes(String(valor).trim().toLowerCase());
+}
+
 function getPool() {
   if (pool) return pool;
 
-  pool = mysql.createPool({
+  const usarSsl = leerBooleano(process.env.DB_SSL, false);
+
+  pool = new Pool({
     host: process.env.DB_HOST || '127.0.0.1',
-    port: Number(process.env.DB_PORT || 3306),
+    port: Number(process.env.DB_PORT || 5432),
     database: process.env.DB_NAME || 'sentimentalizador_simple',
-    user: process.env.DB_USER || 'root',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASS || '',
-    waitForConnections: true,
-    connectionLimit: Number(process.env.DB_POOL_LIMIT || 5),
-    queueLimit: 0,
-    charset: 'utf8mb4',
-    ssl: String(process.env.DB_SSL || 'false').toLowerCase() === 'true' ? {} : undefined,
+    max: Number(process.env.DB_POOL_LIMIT || 5),
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 10000),
+    ssl: usarSsl ? { rejectUnauthorized: false } : false,
   });
 
   return pool;
 }
 
 async function probarConexion() {
-  const [rows] = await getPool().query('SELECT 1 AS ok');
+  const { rows } = await getPool().query('SELECT 1 AS ok');
   return rows?.[0]?.ok === 1;
 }
 
@@ -33,60 +40,76 @@ async function inicializarBd() {
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS publicaciones_negativas (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      id BIGSERIAL PRIMARY KEY,
       plataforma VARCHAR(40) NOT NULL,
       tipo_publicacion VARCHAR(40) NOT NULL,
       url_origen TEXT NULL,
-      url_publicacion VARCHAR(1000) NOT NULL,
-      hash_publicacion CHAR(64) NOT NULL,
-      texto_publicacion MEDIUMTEXT NULL,
+      url_publicacion TEXT NOT NULL,
+      hash_publicacion CHAR(64) NOT NULL UNIQUE,
+      texto_publicacion TEXT NULL,
       fecha_publicacion DATE NULL,
       hora_publicacion VARCHAR(10) NULL,
-      likes INT NULL DEFAULT 0,
-      views INT NULL DEFAULT 0,
-      cantidad_comentarios_detectados INT NOT NULL DEFAULT 0,
-      cantidad_comentarios_negativos INT NOT NULL DEFAULT 0,
-      ruta_imagen_local VARCHAR(1000) NULL,
+      likes INTEGER NULL DEFAULT 0,
+      views INTEGER NULL DEFAULT 0,
+      cantidad_comentarios_detectados INTEGER NOT NULL DEFAULT 0,
+      cantidad_comentarios_negativos INTEGER NOT NULL DEFAULT 0,
+      ruta_imagen_local TEXT NULL,
       url_imagen_original TEXT NULL,
-      fecha_scraping DATETIME NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uk_hash_publicacion (hash_publicacion),
-      KEY idx_plataforma_fecha (plataforma, fecha_scraping),
-      KEY idx_tipo_fecha (tipo_publicacion, fecha_scraping)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      fecha_scraping TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_publicaciones_plataforma_fecha
+      ON publicaciones_negativas (plataforma, fecha_scraping);
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_publicaciones_tipo_fecha
+      ON publicaciones_negativas (tipo_publicacion, fecha_scraping);
   `);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS comentarios_negativos (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      publicacion_id BIGINT UNSIGNED NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      publicacion_id BIGINT NOT NULL REFERENCES publicaciones_negativas(id) ON DELETE CASCADE,
       plataforma VARCHAR(40) NOT NULL,
       tipo_publicacion VARCHAR(40) NOT NULL,
-      url_publicacion VARCHAR(1000) NOT NULL,
-      hash_comentario CHAR(64) NOT NULL,
-      texto_comentario MEDIUMTEXT NOT NULL,
+      url_publicacion TEXT NOT NULL,
+      hash_comentario CHAR(64) NOT NULL UNIQUE,
+      texto_comentario TEXT NOT NULL,
       sentimiento VARCHAR(40) NOT NULL DEFAULT 'negativo',
-      puntaje INT NOT NULL DEFAULT 1,
-      likes INT NOT NULL DEFAULT 0,
-      replies INT NOT NULL DEFAULT 0,
-      fecha_scraping DATETIME NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uk_hash_comentario (hash_comentario),
-      KEY idx_publicacion (publicacion_id),
-      KEY idx_plataforma_fecha (plataforma, fecha_scraping),
-      CONSTRAINT fk_comentarios_publicacion
-        FOREIGN KEY (publicacion_id) REFERENCES publicaciones_negativas(id)
-        ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      puntaje INTEGER NOT NULL DEFAULT 1,
+      likes INTEGER NOT NULL DEFAULT 0,
+      replies INTEGER NOT NULL DEFAULT 0,
+      fecha_scraping TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_comentarios_publicacion
+      ON comentarios_negativos (publicacion_id);
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_comentarios_plataforma_fecha
+      ON comentarios_negativos (plataforma, fecha_scraping);
+  `);
+}
+
+async function cerrarPool() {
+  if (!pool) return;
+  await pool.end();
+  pool = null;
 }
 
 module.exports = {
   getPool,
   probarConexion,
   inicializarBd,
+  cerrarPool,
 };

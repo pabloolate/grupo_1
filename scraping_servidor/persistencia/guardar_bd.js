@@ -26,6 +26,7 @@ function resolverSubcarpetaImagen(tipoPublicacion) {
 
 async function guardarImagenLocalSiCorresponde(post, tipoPublicacion) {
   if (post?.ruta_imagen_local) return post.ruta_imagen_local;
+
   const urlImagen = String(post?.imagen || post?.url_imagen || post?.thumbnail || '').trim();
   if (!urlImagen || urlImagen === 'Sin imagen') return null;
 
@@ -49,6 +50,7 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
   const tipoPublicacion = String(post?.tipo_publicacion || post?.plataforma_payload || 'desconocida');
   const plataforma = resolverPlataformaBase(tipoPublicacion);
   const urlPublicacion = normalizarUrlPublicacion(post?.link || post?.url_publicacion || '');
+
   if (!urlPublicacion) throw new Error('No se puede guardar publicación sin link/url_publicacion');
 
   const negativosLimpios = (Array.isArray(negativos) ? negativos : [])
@@ -69,28 +71,35 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
   const rutaImagenLocal = await guardarImagenLocalSiCorresponde(post, tipoPublicacion);
   const hashPublicacion = hashSha256(urlPublicacion);
 
-  const [result] = await db.execute(`
+  const publicacionResult = await db.query(`
     INSERT INTO publicaciones_negativas (
       plataforma, tipo_publicacion, url_origen, url_publicacion, hash_publicacion,
       texto_publicacion, fecha_publicacion, hora_publicacion, likes, views,
       cantidad_comentarios_detectados, cantidad_comentarios_negativos,
       ruta_imagen_local, url_imagen_original, fecha_scraping
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      plataforma = VALUES(plataforma),
-      tipo_publicacion = VALUES(tipo_publicacion),
-      url_origen = VALUES(url_origen),
-      texto_publicacion = VALUES(texto_publicacion),
-      fecha_publicacion = VALUES(fecha_publicacion),
-      hora_publicacion = VALUES(hora_publicacion),
-      likes = VALUES(likes),
-      views = VALUES(views),
-      cantidad_comentarios_detectados = VALUES(cantidad_comentarios_detectados),
-      cantidad_comentarios_negativos = VALUES(cantidad_comentarios_negativos),
-      ruta_imagen_local = COALESCE(VALUES(ruta_imagen_local), ruta_imagen_local),
-      url_imagen_original = VALUES(url_imagen_original),
-      fecha_scraping = VALUES(fecha_scraping),
-      updated_at = CURRENT_TIMESTAMP
+    ) VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8, $9, $10,
+      $11, $12,
+      $13, $14, $15
+    )
+    ON CONFLICT (hash_publicacion) DO UPDATE SET
+      plataforma = EXCLUDED.plataforma,
+      tipo_publicacion = EXCLUDED.tipo_publicacion,
+      url_origen = EXCLUDED.url_origen,
+      url_publicacion = EXCLUDED.url_publicacion,
+      texto_publicacion = EXCLUDED.texto_publicacion,
+      fecha_publicacion = EXCLUDED.fecha_publicacion,
+      hora_publicacion = EXCLUDED.hora_publicacion,
+      likes = EXCLUDED.likes,
+      views = EXCLUDED.views,
+      cantidad_comentarios_detectados = EXCLUDED.cantidad_comentarios_detectados,
+      cantidad_comentarios_negativos = EXCLUDED.cantidad_comentarios_negativos,
+      ruta_imagen_local = COALESCE(EXCLUDED.ruta_imagen_local, publicaciones_negativas.ruta_imagen_local),
+      url_imagen_original = EXCLUDED.url_imagen_original,
+      fecha_scraping = EXCLUDED.fecha_scraping,
+      updated_at = NOW()
+    RETURNING id;
   `, [
     plataforma,
     tipoPublicacion,
@@ -109,30 +118,34 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
     fechaScraping,
   ]);
 
-  let publicacionId = result.insertId;
-  if (!publicacionId) {
-    const [rows] = await db.execute('SELECT id FROM publicaciones_negativas WHERE hash_publicacion = ? LIMIT 1', [hashPublicacion]);
-    publicacionId = rows?.[0]?.id;
-  }
+  const publicacionId = publicacionResult.rows?.[0]?.id;
+  if (!publicacionId) throw new Error('PostgreSQL no devolvió id de publicación');
 
   let comentariosGuardados = 0;
+
   for (const negativo of negativosLimpios) {
     const hashComentario = hashSha256(`${urlPublicacion}::${negativo.texto_comentario}`);
-    await db.execute(`
+
+    await db.query(`
       INSERT INTO comentarios_negativos (
         publicacion_id, plataforma, tipo_publicacion, url_publicacion,
         hash_comentario, texto_comentario, sentimiento, puntaje, likes, replies, fecha_scraping
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        publicacion_id = VALUES(publicacion_id),
-        plataforma = VALUES(plataforma),
-        tipo_publicacion = VALUES(tipo_publicacion),
-        sentimiento = VALUES(sentimiento),
-        puntaje = VALUES(puntaje),
-        likes = VALUES(likes),
-        replies = VALUES(replies),
-        fecha_scraping = VALUES(fecha_scraping),
-        updated_at = CURRENT_TIMESTAMP
+      ) VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7, $8, $9, $10, $11
+      )
+      ON CONFLICT (hash_comentario) DO UPDATE SET
+        publicacion_id = EXCLUDED.publicacion_id,
+        plataforma = EXCLUDED.plataforma,
+        tipo_publicacion = EXCLUDED.tipo_publicacion,
+        url_publicacion = EXCLUDED.url_publicacion,
+        texto_comentario = EXCLUDED.texto_comentario,
+        sentimiento = EXCLUDED.sentimiento,
+        puntaje = EXCLUDED.puntaje,
+        likes = EXCLUDED.likes,
+        replies = EXCLUDED.replies,
+        fecha_scraping = EXCLUDED.fecha_scraping,
+        updated_at = NOW();
     `, [
       publicacionId,
       plataforma,
@@ -146,6 +159,7 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
       negativo.replies,
       fechaScraping,
     ]);
+
     comentariosGuardados++;
   }
 

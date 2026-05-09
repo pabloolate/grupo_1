@@ -68,18 +68,34 @@ function normalizarNumeroCompacto(valorTexto) {
 
 function formateaFecha(fechaInput, linkScraping = '') {
   if (fechaInput == null) return null;
+
   let raw = normalizarTexto(fechaInput).replace(/\s*,\s*/g, ', ');
   if (!raw) return null;
 
   const now = moment().tz(ZONA_HORARIA);
+
+  // ISO directo: Instagram suele entregar datetime tipo 2026-05-01T16:02:19.000Z
+  let dtIso = moment(raw, moment.ISO_8601, true);
+  if (dtIso.isValid()) {
+    return dtIso.tz(ZONA_HORARIA).format('YYYY-MM-DD');
+  }
+
+  // Date parse nativo como respaldo para strings ISO o RFC no cubiertos
+  const fechaNativa = new Date(raw);
+  if (!Number.isNaN(fechaNativa.getTime())) {
+    return moment(fechaNativa).tz(ZONA_HORARIA).format('YYYY-MM-DD');
+  }
+
   let m = raw.toLowerCase().match(/^(\d+)\s*(day|days|hour|hours|minute|minutes|week|weeks|wk|wks|d|h|m|w)\s*(ago)?$/i);
   if (m) {
     const n = parseInt(m[1], 10);
     const token = m[2].toLowerCase();
+
     let unit = 'weeks';
     if (token === 'd' || token.startsWith('day')) unit = 'days';
     else if (token === 'h' || token.startsWith('hour')) unit = 'hours';
     else if (token === 'm' || token.startsWith('minute')) unit = 'minutes';
+
     return now.clone().subtract(n, unit).format('YYYY-MM-DD');
   }
 
@@ -87,10 +103,12 @@ function formateaFecha(fechaInput, linkScraping = '') {
   if (m) {
     const n = parseInt(m[1], 10);
     const token = m[2].toLowerCase();
+
     let unit = 'weeks';
     if (token === 'd' || token.startsWith('d') || token.startsWith('dia') || token.startsWith('día')) unit = 'days';
     else if (token === 'h' || token.startsWith('h') || token.startsWith('hora')) unit = 'hours';
     else if (token === 'm' || token.startsWith('m') || token.startsWith('min')) unit = 'minutes';
+
     return now.clone().subtract(n, unit).format('YYYY-MM-DD');
   }
 
@@ -105,7 +123,10 @@ function formateaFecha(fechaInput, linkScraping = '') {
   if (!dt.isValid()) dt = moment(raw, ['MMMM D', 'MMM D', 'D MMMM', 'D MMM'], 'en', false);
   if (dt.isValid()) return dt.year(now.year()).format('YYYY-MM-DD');
 
-  if (MODO_LOG) logWarn(kleur.yellow(`[fecha] No pude parsear ${JSON.stringify(raw)} link=${linkScraping}`));
+  if (MODO_LOG) {
+    logWarn(kleur.yellow(`[fecha] No pude parsear ${JSON.stringify(raw)} link=${linkScraping}`));
+  }
+
   return null;
 }
 

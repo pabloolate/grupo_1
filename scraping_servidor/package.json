@@ -15,7 +15,7 @@
     "kleur": "^4.1.5",
     "moment": "^2.29.4",
     "moment-timezone": "^0.5.43",
-    "mysql2": "^3.14.1",
+    "pg": "^8.20.0",
     "playwright": "^1.58.2",
     "puppeteer": "^24.10.0"
   }
