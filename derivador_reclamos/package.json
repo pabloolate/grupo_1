@@ -1,0 +1,24 @@
+{
+  "name": "derivador_reclamos",
+  "version": "1.0.0",
+  "description": "Servicio Node.js para derivar reclamos negativos desde scraping hacia la mesa de ayuda VTR.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "test:db": "node src/test_db.js"
+  },
+  "keywords": [
+    "derivador",
+    "reclamos",
+    "vtr",
+    "ollama",
+    "postgresql"
+  ],
+  "author": "Pablo Olate Carreño",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1"
+  }
+}

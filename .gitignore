@@ -2,3 +2,5 @@
 /scraping_servidor/imagenes
 /scraping_servidor/node_modules
 scraping_servidor/.env
+/derivador_reclamos/node_modules
+*.zip

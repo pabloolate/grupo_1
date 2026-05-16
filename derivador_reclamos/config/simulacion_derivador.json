@@ -1,0 +1,146 @@
+{
+  "respuesta_base": {
+    "es_reclamo_valido": true,
+    "decision_derivador": "DERIVADO_HUMANO",
+    "categoria": "OTRO",
+    "prioridad": "MEDIA",
+    "perfil_destino": "ATENCION_CLIENTE",
+    "requiere_atencion_humana": true,
+    "agresividad": "MEDIA",
+    "riesgo_reputacional": "MEDIO",
+    "riesgo_legal": "BAJO",
+    "resumen": "Cliente manifiesta molestia por el servicio y requiere revisión del caso.",
+    "respuesta_sugerida": "Hola, lamentamos la situación. Para ayudarte necesitamos que nos escribas por mensaje privado con tus datos de cliente.",
+    "motivo_decision": "El reclamo requiere revisión humana para validar antecedentes del cliente.",
+    "confianza": 0.75
+  },
+  "reglas": [
+    {
+      "nombre": "riesgo_legal_reputacional",
+      "contiene": ["sernac", "demanda", "demandar", "denuncia", "funa", "estafa"],
+      "respuesta": {
+        "decision_derivador": "ESCALADO_OPERACIONES",
+        "categoria": "MALA_ATENCION",
+        "prioridad": "CRITICA",
+        "perfil_destino": "OPERACIONES",
+        "requiere_atencion_humana": true,
+        "agresividad": "ALTA",
+        "riesgo_reputacional": "ALTO",
+        "riesgo_legal": "ALTO",
+        "resumen": "Cliente expresa un reclamo crítico con posible impacto reputacional o legal.",
+        "motivo_decision": "El comentario contiene señales de riesgo reputacional o legal, por lo que debe escalarse.",
+        "confianza": 0.92
+      }
+    },
+    {
+      "nombre": "mala_atencion_no_responden",
+      "contiene": ["no contestan", "ni me contestan", "no responden", "nadie responde", "me ignoran", "me cortan", "no atienden", "whatsapp no responde", "wassap", "servicio técnico no llegó", "tecnico no llego"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "MALA_ATENCION",
+        "prioridad": "ALTA",
+        "perfil_destino": "ATENCION_CLIENTE",
+        "requiere_atencion_humana": true,
+        "agresividad": "MEDIA",
+        "riesgo_reputacional": "MEDIO",
+        "riesgo_legal": "BAJO",
+        "resumen": "Cliente reclama por falta de respuesta, mala atención o incumplimiento del soporte.",
+        "respuesta_sugerida": "Hola, lamentamos que no hayas recibido respuesta. Para revisar tu caso, por favor escríbenos por mensaje privado con tus datos de cliente.",
+        "motivo_decision": "El reclamo requiere atención humana porque involucra falta de respuesta o mala experiencia con canales de soporte.",
+        "confianza": 0.9
+      }
+    },
+    {
+      "nombre": "internet_o_conectividad",
+      "contiene": ["sin internet", "wifi", "wi-fi", "router", "señal", "senal", "caído", "caido", "todo caído", "todo caido", "conexión", "conexion", "sin conexión", "sin conexion"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "INTERNET",
+        "prioridad": "ALTA",
+        "perfil_destino": "ATENCION_CLIENTE",
+        "requiere_atencion_humana": true,
+        "agresividad": "MEDIA",
+        "riesgo_reputacional": "MEDIO",
+        "riesgo_legal": "BAJO",
+        "resumen": "Cliente reporta problemas de conexión, caída de internet o intermitencia del servicio.",
+        "respuesta_sugerida": "Hola, lamentamos el inconveniente con tu conexión. Para revisar el servicio asociado a tu cuenta, escríbenos por mensaje privado con tus datos de cliente.",
+        "motivo_decision": "El reclamo requiere validación técnica y datos del cliente para resolver.",
+        "confianza": 0.88
+      }
+    },
+    {
+      "nombre": "television",
+      "contiene": ["cable", "canal", "chilevision", "studio", "televisión", "television", "deco", "decodificador"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "TELEVISION",
+        "prioridad": "MEDIA",
+        "perfil_destino": "ATENCION_CLIENTE",
+        "requiere_atencion_humana": true,
+        "resumen": "Cliente reporta problema con televisión, señal de TV, canal o decodificador.",
+        "motivo_decision": "El caso requiere revisión del servicio de televisión asociado al cliente.",
+        "confianza": 0.84
+      }
+    },
+    {
+      "nombre": "telefonia",
+      "contiene": ["teléfono", "telefono", "llamadas", "llamar", "recibir llamadas"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "TELEFONIA",
+        "prioridad": "ALTA",
+        "perfil_destino": "ATENCION_CLIENTE",
+        "requiere_atencion_humana": true,
+        "resumen": "Cliente reporta inconvenientes con telefonía o imposibilidad de comunicarse.",
+        "motivo_decision": "El caso requiere revisión del servicio telefónico.",
+        "confianza": 0.84
+      }
+    },
+    {
+      "nombre": "facturacion",
+      "contiene": ["cobro", "boleta", "pago", "pagar", "plan", "deuda", "factura"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "FACTURACION",
+        "prioridad": "MEDIA",
+        "perfil_destino": "POSTVENTA",
+        "requiere_atencion_humana": true,
+        "resumen": "Cliente presenta reclamo asociado a cobros, pagos, plan o facturación.",
+        "motivo_decision": "El reclamo involucra información comercial o de facturación que debe revisar postventa.",
+        "confianza": 0.86
+      }
+    },
+    {
+      "nombre": "baja_servicio",
+      "contiene": ["baja", "cancelar", "renunciar", "terminar contrato"],
+      "respuesta": {
+        "decision_derivador": "DERIVADO_HUMANO",
+        "categoria": "BAJA_SERVICIO",
+        "prioridad": "ALTA",
+        "perfil_destino": "POSTVENTA",
+        "requiere_atencion_humana": true,
+        "resumen": "Cliente menciona intención de dar de baja o cancelar el servicio.",
+        "motivo_decision": "Las solicitudes de baja requieren gestión humana y validación comercial.",
+        "confianza": 0.89
+      }
+    },
+    {
+      "nombre": "consulta_simple_resuelta_ia",
+      "contiene": ["consulta", "información", "informacion"],
+      "respuesta": {
+        "decision_derivador": "RESUELTO_IA",
+        "categoria": "SOPORTE_DIGITAL",
+        "prioridad": "BAJA",
+        "perfil_destino": "NINGUNO",
+        "requiere_atencion_humana": false,
+        "agresividad": "BAJA",
+        "riesgo_reputacional": "BAJO",
+        "riesgo_legal": "BAJO",
+        "resumen": "Comentario de baja complejidad que puede ser respondido automáticamente.",
+        "respuesta_sugerida": "Hola, gracias por escribirnos. Para ayudarte, envíanos un mensaje privado con el detalle de tu consulta.",
+        "motivo_decision": "El caso puede ser contenido con una respuesta automática inicial.",
+        "confianza": 0.7
+      }
+    }
+  ]
+}
