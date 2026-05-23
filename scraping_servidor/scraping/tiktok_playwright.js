@@ -445,59 +445,168 @@ async function scrollearPanelComentariosTikTok(page) {
 
 async function extraerComentariosDesdePanelTikTok(page) {
   return await page.evaluate(() => {
-    const wrappers = Array.from(
+    const limpiar = (valor) => String(valor || '').replace(/\s+/g, ' ').trim();
+
+    const normalizarUsuarioTikTok = (valor) => {
+      let texto = limpiar(valor);
+
+      if (!texto) return '';
+
+      texto = texto
+        .replace(/^https?:\/\/(www\.)?tiktok\.com\//i, '')
+        .replace(/^\/+/, '')
+        .replace(/^@+/, '')
+        .split(/[/?#]/)[0]
+        .trim();
+
+      if (!texto) return '';
+
+      return texto.slice(0, 255);
+    };
+
+    const obtenerWrapperComentario = (nodo) => {
+      if (!nodo) return null;
+
+      return (
+        nodo.closest?.('div[class*="DivCommentObjectWrapper"]') ||
+        nodo.closest?.('div[class*="CommentItem"]') ||
+        nodo.closest?.('[data-e2e="comment-item"]') ||
+        nodo.closest?.('div[data-e2e="comment-list"] > div') ||
+        nodo
+      );
+    };
+
+    const obtenerUsuarioComentario = (wrapper) => {
+      if (!wrapper) return '';
+
+      const selectoresUsuario = [
+        '[data-e2e^="comment-username"] a[href^="/@"]',
+        '[data-e2e="comment-username-1"] a[href^="/@"]',
+        'a[href^="/@"]',
+      ];
+
+      for (const selector of selectoresUsuario) {
+        const enlace = wrapper.querySelector?.(selector);
+        const href = limpiar(enlace?.getAttribute?.('href') || '');
+        const texto = limpiar(enlace?.textContent || '');
+
+        const desdeHref = normalizarUsuarioTikTok(href);
+        if (desdeHref) return desdeHref;
+
+        const desdeTexto = normalizarUsuarioTikTok(texto);
+        if (desdeTexto) return desdeTexto;
+      }
+
+      const posibleUsuario = wrapper.querySelector?.('[data-e2e^="comment-username"]');
+      const textoUsuario = limpiar(posibleUsuario?.textContent || '');
+
+      return normalizarUsuarioTikTok(textoUsuario);
+    };
+
+    const obtenerTextoComentario = (wrapper, nodoOriginal) => {
+      if (!wrapper) return '';
+
+      const selectoresTexto = [
+        '[data-e2e="comment-level-1"]',
+        '[data-e2e="comment-text"]',
+      ];
+
+      for (const selector of selectoresTexto) {
+        const nodo = wrapper.querySelector?.(selector);
+        const texto = limpiar(nodo?.textContent || '');
+
+        if (texto) return texto;
+      }
+
+      const textoDirecto = limpiar(nodoOriginal?.textContent || '');
+      if (textoDirecto) return textoDirecto;
+
+      const p = wrapper.querySelector?.('p');
+      const textoP = limpiar(p?.textContent || '');
+      if (textoP) return textoP;
+
+      const span = wrapper.querySelector?.('span');
+      const textoSpan = limpiar(span?.textContent || '');
+      if (textoSpan) return textoSpan;
+
+      return '';
+    };
+
+    const obtenerLikesComentario = (wrapper) => {
+      if (!wrapper) return '0';
+
+      return limpiar(
+        wrapper.querySelector?.('[data-e2e="comment-like-count"]')?.textContent ||
+        wrapper.querySelector?.('[class*="like-count"]')?.textContent ||
+        wrapper.querySelector?.('strong')?.textContent ||
+        '0'
+      );
+    };
+
+    const obtenerRepliesComentario = (wrapper) => {
+      if (!wrapper) return '0';
+
+      return limpiar(
+        wrapper.querySelector?.('[data-e2e="comment-reply-count"]')?.textContent ||
+        wrapper.querySelector?.('[class*="reply"]')?.textContent ||
+        '0'
+      );
+    };
+
+    const nodosBase = Array.from(
       document.querySelectorAll(
         [
           'div[class*="DivCommentObjectWrapper"]',
           'div[class*="CommentItem"]',
-          '[data-e2e="comment-level-1"]',
           '[data-e2e="comment-item"]',
+          '[data-e2e="comment-level-1"]',
+          '[data-e2e="comment-text"]',
           'div[data-e2e="comment-list"] [data-e2e="comment-text"]',
         ].join(', ')
       )
     );
 
+    const wrappers = [];
+    const wrappersVistos = new Set();
+
+    for (const nodo of nodosBase) {
+      const wrapper = obtenerWrapperComentario(nodo);
+      if (!wrapper) continue;
+
+      if (wrappersVistos.has(wrapper)) continue;
+      wrappersVistos.add(wrapper);
+
+      wrappers.push({
+        wrapper,
+        nodoOriginal: nodo,
+      });
+    }
+
     const salida = [];
     const vistos = new Set();
 
-    for (const wrapper of wrappers) {
-      const esNodoTextoDirecto = wrapper?.matches?.('[data-e2e="comment-text"]');
+    for (const item of wrappers) {
+      const wrapper = item.wrapper;
+      const nodoOriginal = item.nodoOriginal;
 
-      const textoComentario = esNodoTextoDirecto
-        ? String(wrapper.textContent || '').replace(/\s+/g, ' ').trim()
-        : String(
-            wrapper.querySelector?.('[data-e2e="comment-text"]')?.textContent ||
-            wrapper.querySelector?.('p')?.textContent ||
-            wrapper.querySelector?.('span')?.textContent ||
-            ''
-          ).replace(/\s+/g, ' ').trim();
+      const usuarioComentario = obtenerUsuarioComentario(wrapper);
+      const textoComentario = obtenerTextoComentario(wrapper, nodoOriginal);
 
       if (!textoComentario) continue;
-      if (vistos.has(textoComentario)) continue;
 
-      vistos.add(textoComentario);
+      const claveDedup = `${usuarioComentario || 'sin_usuario'}::${textoComentario}`;
+      if (vistos.has(claveDedup)) continue;
 
-      const likesRaw = esNodoTextoDirecto
-        ? '0'
-        : String(
-            wrapper.querySelector?.('[data-e2e="comment-like-count"]')?.textContent ||
-            wrapper.querySelector?.('[class*="like-count"]')?.textContent ||
-            wrapper.querySelector?.('strong')?.textContent ||
-            '0'
-          ).replace(/\s+/g, ' ').trim();
+      vistos.add(claveDedup);
 
-      const repliesRaw = esNodoTextoDirecto
-        ? '0'
-        : String(
-            wrapper.querySelector?.('[data-e2e="comment-reply-count"]')?.textContent ||
-            wrapper.querySelector?.('[class*="reply"]')?.textContent ||
-            '0'
-          ).replace(/\s+/g, ' ').trim();
+      const likesRaw = obtenerLikesComentario(wrapper);
+      const repliesRaw = obtenerRepliesComentario(wrapper);
 
       const indice = salida.length + 1;
 
       salida.push({
         [`comentario_${indice}`]: textoComentario,
+        [`usuario_comentario_${indice}`]: usuarioComentario || null,
         [`likes_${indice}`]: likesRaw,
         [`replies_${indice}`]: repliesRaw,
       });

@@ -32,11 +32,23 @@ function normalizarComentarioDom(item, index) {
 
   const keyComentario = Object.keys(item).find((k) => /^comentario_\d+$/.test(k));
   const id = keyComentario ? keyComentario.split('_')[1] : String(index + 1);
+
   const texto = normalizarTexto(keyComentario ? item[keyComentario] : item.texto || item.comentario || '');
   if (!texto) return null;
 
+  const usuarioComentario = normalizarTexto(
+    item[`usuario_comentario_${id}`] ||
+    item.usuario_comentario ||
+    item.usuario ||
+    item.autor ||
+    item.username ||
+    item.handle ||
+    ''
+  );
+
   return {
     [`comentario_${id}`]: texto,
+    [`usuario_comentario_${id}`]: usuarioComentario || null,
     [`likes_${id}`]: Number(item[`likes_${id}`] ?? item.likes ?? 0) || 0,
     [`replies_${id}`]: Number(item[`replies_${id}`] ?? item.replies ?? item.respuestas ?? 0) || 0,
   };

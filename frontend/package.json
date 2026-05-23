@@ -14,7 +14,8 @@
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "latest",
-    "axios": "latest"
+    "axios": "latest",
+    "recharts": "latest"
   },
   "devDependencies": {}
 }

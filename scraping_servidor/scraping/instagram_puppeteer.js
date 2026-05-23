@@ -184,48 +184,168 @@ async function scrapeCurrentPost(page, postLinkRaw, tipoPublicacion) {
 
   const payload = await page.evaluate(() => {
     const dialog = document.querySelector('div[role="dialog"]') || document;
-    const clean = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+
+    const clean = (s) => String(s || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
     const parseNum = (txt) => {
       const t = clean(txt).toLowerCase().replace(/,/g, '.');
       const m = t.match(/(\d+(?:\.\d+)?)(\s*[kmb])?/i);
+
       if (!m) {
         const n = parseInt(t.replace(/[^\d]/g, ''), 10);
         return Number.isFinite(n) ? n : 0;
       }
+
       let n = parseFloat(m[1] || '0') || 0;
       const s = String(m[2] || '').trim().toLowerCase();
+
       if (s === 'k') n *= 1000;
       if (s === 'm') n *= 1000000;
       if (s === 'b') n *= 1000000000;
+
       return Math.round(n);
     };
+
     const basura = (t) => {
       const x = clean(t).toLowerCase();
+
       if (!x || x.length < 2) return true;
       if (['like', 'likes', 'reply', 'replies', 'follow', 'following', 'see translation', 'ver traducción'].includes(x)) return true;
       if (/^view all \d+ comments/.test(x) || /^ver los \d+ comentarios/.test(x)) return true;
       if (/^\d+\s*(likes?|me gusta)$/.test(x)) return true;
+
       return false;
+    };
+
+    const normalizarUsuarioIg = (raw) => {
+      const limpio = clean(raw)
+        .replace(/^@+/, '')
+        .replace(/\s+/g, '')
+        .trim();
+
+      if (!limpio) return null;
+      if (limpio.length > 255) return limpio.slice(0, 255);
+
+      return limpio;
+    };
+
+    const obtenerUsuarioDesdeBloqueComentario = (li) => {
+      const selectores = [
+        'div._a9zr h3 a[href][role="link"]',
+        'div._a9zr h3 a[href]',
+        'h3 a[href][role="link"]',
+        'h3 a[href]',
+      ];
+
+      for (const selector of selectores) {
+        const a = li.querySelector(selector);
+        const texto = clean(a?.innerText || a?.textContent || '');
+        const href = clean(a?.getAttribute?.('href') || '');
+
+        if (!texto && !href) continue;
+
+        const usuarioDesdeTexto = normalizarUsuarioIg(texto);
+
+        if (usuarioDesdeTexto) return usuarioDesdeTexto;
+
+        const matchHref = href.match(/^\/([^/?#]+)\/?$/);
+        if (matchHref && matchHref[1]) {
+          const usuarioDesdeHref = normalizarUsuarioIg(matchHref[1]);
+          if (usuarioDesdeHref) return usuarioDesdeHref;
+        }
+      }
+
+      return null;
+    };
+
+    const obtenerTextoDesdeBloqueComentario = (li, usuarioComentario) => {
+      const candidatosTexto = [
+        'div._a9zr div.xt0psk2 span[dir="auto"]',
+        'div._a9zr div.xt0psk2 span',
+        'div.xt0psk2 span[dir="auto"]',
+        'div.xt0psk2 span',
+      ];
+
+      for (const selector of candidatosTexto) {
+        const nodos = Array.from(li.querySelectorAll(selector));
+
+        for (const nodo of nodos) {
+          const textoNodo = clean(nodo.innerText || nodo.textContent);
+
+          if (!textoNodo) continue;
+          if (basura(textoNodo)) continue;
+
+          const usuarioNormalizado = normalizarUsuarioIg(usuarioComentario || '');
+
+          if (usuarioNormalizado && textoNodo === usuarioNormalizado) continue;
+
+          return textoNodo;
+        }
+      }
+
+      let texto = clean(li.innerText || li.textContent || '');
+
+      if (usuarioComentario) {
+        const usuarioEscapado = String(usuarioComentario).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        texto = texto.replace(new RegExp(`^${usuarioEscapado}\\s+`, 'i'), '').trim();
+      } else {
+        texto = texto.replace(/^\S+\s+/, '').trim();
+      }
+
+      texto = texto
+        .replace(/\b(Reply|Responder|See translation|Ver traducción)\b.*$/i, '')
+        .replace(/\b\d+\s*(likes?|me gusta)\b/ig, '')
+        .trim();
+
+      return texto;
+    };
+
+    const obtenerLikesComentario = (li) => {
+      const candidatos = Array.from(li.querySelectorAll('[aria-label], button, span, a, div'));
+
+      for (const el of candidatos) {
+        const mezcla = clean(`${el.getAttribute?.('aria-label') || ''} ${el.innerText || el.textContent || ''}`);
+
+        if (!/\b(like|likes|me gusta)\b/i.test(mezcla)) continue;
+        if (!/\d/.test(mezcla)) continue;
+
+        const n = parseNum(mezcla);
+        if (n > 0) return n;
+      }
+
+      return 0;
     };
 
     const obtenerDescripcion = () => {
       const candidatos = [];
+
       for (const el of Array.from(dialog.querySelectorAll('h1, span._ap3a, article span, div.xt0psk2, header, section'))) {
         const txt = clean(el.innerText || el.textContent);
-        if (!basura(txt) && txt.length >= 3) candidatos.push(txt);
+
+        if (!basura(txt) && txt.length >= 3) {
+          candidatos.push(txt);
+        }
       }
+
       return candidatos.find((x) => x.length >= 3 && !/^(liked by|le gustó a)/i.test(x)) || 'Sin descripción';
     };
 
     const obtenerLikes = () => {
       const candidatos = Array.from(dialog.querySelectorAll('[aria-label], button, span, a, div'));
+
       for (const el of candidatos) {
         const mezcla = clean(`${el.getAttribute?.('aria-label') || ''} ${el.innerText || el.textContent || ''}`);
+
         if (!/\b(like|likes|me gusta)\b/i.test(mezcla)) continue;
         if (!/\d/.test(mezcla)) continue;
+
         const n = parseNum(mezcla);
         if (n > 0) return n;
       }
+
       return 0;
     };
 
@@ -235,26 +355,38 @@ async function scrapeCurrentPost(page, postLinkRaw, tipoPublicacion) {
 
     const comentarios = [];
     const vistos = new Set();
-    const bloques = Array.from(dialog.querySelectorAll('ul li, article ul li, div[role="dialog"] ul li, div._a9zr'));
-    let idx = 1;
-    for (const li of bloques) {
-      const txtCompleto = clean(li.innerText || li.textContent || '');
-      if (!txtCompleto || txtCompleto.length < 2) continue;
-      if (basura(txtCompleto)) continue;
 
-      let texto = txtCompleto
-        .replace(/^\S+\s+/, '')
-        .replace(/\b(Reply|Responder|See translation|Ver traducción)\b.*$/i, '')
-        .replace(/\b\d+\s*(likes?|me gusta)\b/ig, '')
-        .trim();
+    const bloques = Array.from(dialog.querySelectorAll(
+      'ul li._a9zj, article ul li._a9zj, div[role="dialog"] ul li._a9zj, ul li'
+    ));
+
+    let idx = 1;
+
+    for (const li of bloques) {
+      const usuarioComentario = obtenerUsuarioDesdeBloqueComentario(li);
+
+      // En IG, caption/publicación principal suele venir con h2; comentarios reales vienen con h3.
+      // Si no hay usuario desde h3, no lo usamos como comentario.
+      if (!usuarioComentario) continue;
+
+      const texto = obtenerTextoDesdeBloqueComentario(li, usuarioComentario);
 
       if (!texto || texto.length < 2) continue;
-      if (vistos.has(texto)) continue;
-      vistos.add(texto);
+      if (basura(texto)) continue;
 
-      const likesTxt = clean(li.querySelector('[aria-label*="like" i], button, span')?.getAttribute?.('aria-label') || '');
-      const likes = parseNum(likesTxt);
-      comentarios.push({ [`comentario_${idx}`]: texto, [`likes_${idx}`]: likes, [`replies_${idx}`]: 0 });
+      const claveDedup = `${usuarioComentario}::${texto}`;
+      if (vistos.has(claveDedup)) continue;
+      vistos.add(claveDedup);
+
+      const likes = obtenerLikesComentario(li);
+
+      comentarios.push({
+        [`comentario_${idx}`]: texto,
+        [`usuario_comentario_${idx}`]: usuarioComentario,
+        [`likes_${idx}`]: likes,
+        [`replies_${idx}`]: 0,
+      });
+
       idx++;
     }
 

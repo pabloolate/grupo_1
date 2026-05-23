@@ -1,3 +1,6 @@
+import { etiquetaEstadoCaso } from '../../utils/etiquetas.js';
+
 export default function EstadoBadge({ estado }) {
-  return <span className="badge badge-state">{estado || 'SIN_ESTADO'}</span>;
+  const raw = String(estado || '').toLowerCase();
+  return <span className={`badge badge-state estado-${raw}`}>{etiquetaEstadoCaso(estado)}</span>;
 }

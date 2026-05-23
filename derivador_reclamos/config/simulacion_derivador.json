@@ -1,145 +1,169 @@
 {
   "respuesta_base": {
     "es_reclamo_valido": true,
-    "decision_derivador": "DERIVADO_HUMANO",
-    "categoria": "OTRO",
-    "prioridad": "MEDIA",
-    "perfil_destino": "ATENCION_CLIENTE",
-    "requiere_atencion_humana": true,
-    "agresividad": "MEDIA",
-    "riesgo_reputacional": "MEDIO",
-    "riesgo_legal": "BAJO",
-    "resumen": "Cliente manifiesta molestia por el servicio y requiere revisión del caso.",
-    "respuesta_sugerida": "Hola, lamentamos la situación. Para ayudarte necesitamos que nos escribas por mensaje privado con tus datos de cliente.",
-    "motivo_decision": "El reclamo requiere revisión humana para validar antecedentes del cliente.",
-    "confianza": 0.75
+    "tipo_incidencia": "RECLAMO_GENERAL",
+    "motivo_decision": "Comentario negativo general que requiere revisión por atención al cliente.",
+    "confianza": 0.72
   },
   "reglas": [
     {
       "nombre": "riesgo_legal_reputacional",
-      "contiene": ["sernac", "demanda", "demandar", "denuncia", "funa", "estafa"],
+      "contiene": ["sernac", "demanda", "demandar", "denuncia", "denunciar", "funa", "funar", "estafa", "estafadores", "subtel"],
       "respuesta": {
-        "decision_derivador": "ESCALADO_OPERACIONES",
-        "categoria": "MALA_ATENCION",
-        "prioridad": "CRITICA",
-        "perfil_destino": "OPERACIONES",
-        "requiere_atencion_humana": true,
-        "agresividad": "ALTA",
-        "riesgo_reputacional": "ALTO",
-        "riesgo_legal": "ALTO",
-        "resumen": "Cliente expresa un reclamo crítico con posible impacto reputacional o legal.",
-        "motivo_decision": "El comentario contiene señales de riesgo reputacional o legal, por lo que debe escalarse.",
-        "confianza": 0.92
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "RIESGO_LEGAL_REPUTACIONAL",
+        "motivo_decision": "El comentario contiene señales de riesgo legal o reputacional.",
+        "confianza": 0.94
       }
     },
     {
-      "nombre": "mala_atencion_no_responden",
-      "contiene": ["no contestan", "ni me contestan", "no responden", "nadie responde", "me ignoran", "me cortan", "no atienden", "whatsapp no responde", "wassap", "servicio técnico no llegó", "tecnico no llego"],
+      "nombre": "sin_servicio_internet",
+      "contiene": ["sin internet", "no tengo internet", "no hay internet", "internet caido", "internet caído", "se cayó internet", "se cayo internet", "sin conexion", "sin conexión", "no funciona internet"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "MALA_ATENCION",
-        "prioridad": "ALTA",
-        "perfil_destino": "ATENCION_CLIENTE",
-        "requiere_atencion_humana": true,
-        "agresividad": "MEDIA",
-        "riesgo_reputacional": "MEDIO",
-        "riesgo_legal": "BAJO",
-        "resumen": "Cliente reclama por falta de respuesta, mala atención o incumplimiento del soporte.",
-        "respuesta_sugerida": "Hola, lamentamos que no hayas recibido respuesta. Para revisar tu caso, por favor escríbenos por mensaje privado con tus datos de cliente.",
-        "motivo_decision": "El reclamo requiere atención humana porque involucra falta de respuesta o mala experiencia con canales de soporte.",
-        "confianza": 0.9
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "SIN_SERVICIO_INTERNET",
+        "motivo_decision": "El usuario reporta ausencia total de internet.",
+        "confianza": 0.93
       }
     },
     {
-      "nombre": "internet_o_conectividad",
-      "contiene": ["sin internet", "wifi", "wi-fi", "router", "señal", "senal", "caído", "caido", "todo caído", "todo caido", "conexión", "conexion", "sin conexión", "sin conexion"],
+      "nombre": "intermitencia_internet",
+      "contiene": ["intermitente", "se cae a cada rato", "se corta a cada rato", "cortes de internet", "anda y se cae", "microcortes", "internet inestable"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "INTERNET",
-        "prioridad": "ALTA",
-        "perfil_destino": "ATENCION_CLIENTE",
-        "requiere_atencion_humana": true,
-        "agresividad": "MEDIA",
-        "riesgo_reputacional": "MEDIO",
-        "riesgo_legal": "BAJO",
-        "resumen": "Cliente reporta problemas de conexión, caída de internet o intermitencia del servicio.",
-        "respuesta_sugerida": "Hola, lamentamos el inconveniente con tu conexión. Para revisar el servicio asociado a tu cuenta, escríbenos por mensaje privado con tus datos de cliente.",
-        "motivo_decision": "El reclamo requiere validación técnica y datos del cliente para resolver.",
-        "confianza": 0.88
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "INTERMITENCIA_INTERNET",
+        "motivo_decision": "El usuario reporta cortes o inestabilidad del servicio de internet.",
+        "confianza": 0.90
       }
     },
     {
-      "nombre": "television",
-      "contiene": ["cable", "canal", "chilevision", "studio", "televisión", "television", "deco", "decodificador"],
+      "nombre": "baja_velocidad",
+      "contiene": ["lento", "lenta", "lentisimo", "lentísimo", "baja velocidad", "mala velocidad", "no carga", "velocidad horrible", "internet lento"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "TELEVISION",
-        "prioridad": "MEDIA",
-        "perfil_destino": "ATENCION_CLIENTE",
-        "requiere_atencion_humana": true,
-        "resumen": "Cliente reporta problema con televisión, señal de TV, canal o decodificador.",
-        "motivo_decision": "El caso requiere revisión del servicio de televisión asociado al cliente.",
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "BAJA_VELOCIDAD",
+        "motivo_decision": "El usuario reporta lentitud o baja velocidad.",
+        "confianza": 0.87
+      }
+    },
+    {
+      "nombre": "problema_wifi_router",
+      "contiene": ["wifi", "wi-fi", "router", "modem", "módem", "señal wifi", "senal wifi", "poca señal", "poca senal", "no llega señal"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "PROBLEMA_WIFI_ROUTER",
+        "motivo_decision": "El usuario reporta problemas con WiFi, router o señal interna.",
+        "confianza": 0.86
+      }
+    },
+    {
+      "nombre": "problema_tv_cable",
+      "contiene": ["television", "televisión", "tv cable", "cable", "canales", "canal", "deco", "decodificador", "sin señal tv", "sin senal tv"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "PROBLEMA_TV_CABLE",
+        "motivo_decision": "El usuario reporta problemas asociados a televisión o cable.",
+        "confianza": 0.86
+      }
+    },
+    {
+      "nombre": "problema_telefonia",
+      "contiene": ["telefono", "teléfono", "telefonia", "telefonía", "llamadas", "no puedo llamar", "no recibe llamadas", "linea fija", "línea fija"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "PROBLEMA_TELEFONIA",
+        "motivo_decision": "El usuario reporta problemas con telefonía.",
+        "confianza": 0.86
+      }
+    },
+    {
+      "nombre": "cobro_indebido",
+      "contiene": ["cobro indebido", "me cobraron de mas", "me cobraron de más", "cobro duplicado", "cobran lo que quieren", "cobro excesivo", "cobro no corresponde"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "COBRO_INDEBIDO",
+        "motivo_decision": "El usuario reclama un cobro que considera incorrecto o no autorizado.",
+        "confianza": 0.91
+      }
+    },
+    {
+      "nombre": "pago_no_reconocido",
+      "contiene": ["pague y", "pagué y", "no aparece mi pago", "no reconocen mi pago", "pago no aparece", "pago no aplicado", "pago no registrado"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "PAGO_NO_RECONOCIDO",
+        "motivo_decision": "El usuario indica que un pago no fue reconocido o registrado.",
+        "confianza": 0.89
+      }
+    },
+    {
+      "nombre": "problema_facturacion",
+      "contiene": ["boleta", "factura", "facturacion", "facturación", "cuenta", "deuda", "plan", "pagar", "pago", "cobro"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "PROBLEMA_FACTURACION",
+        "motivo_decision": "El usuario presenta un problema general de facturación, pago o cuenta.",
         "confianza": 0.84
       }
     },
     {
-      "nombre": "telefonia",
-      "contiene": ["teléfono", "telefono", "llamadas", "llamar", "recibir llamadas"],
+      "nombre": "mala_atencion",
+      "contiene": ["no contestan", "ni me contestan", "no responden", "nadie responde", "me ignoran", "me cortan", "no atienden", "mala atencion", "mala atención", "pesima atencion", "pésima atención", "whatsapp no responde", "wassap no responde"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "TELEFONIA",
-        "prioridad": "ALTA",
-        "perfil_destino": "ATENCION_CLIENTE",
-        "requiere_atencion_humana": true,
-        "resumen": "Cliente reporta inconvenientes con telefonía o imposibilidad de comunicarse.",
-        "motivo_decision": "El caso requiere revisión del servicio telefónico.",
-        "confianza": 0.84
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "MALA_ATENCION",
+        "motivo_decision": "El usuario reclama mala atención o falta de respuesta.",
+        "confianza": 0.90
       }
     },
     {
-      "nombre": "facturacion",
-      "contiene": ["cobro", "boleta", "pago", "pagar", "plan", "deuda", "factura"],
+      "nombre": "tecnico_no_asiste",
+      "contiene": ["tecnico no llego", "técnico no llegó", "no vino el tecnico", "no vino el técnico", "servicio tecnico no llego", "visita tecnica no llego", "visita técnica no llegó", "planton", "me dejaron esperando"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "FACTURACION",
-        "prioridad": "MEDIA",
-        "perfil_destino": "POSTVENTA",
-        "requiere_atencion_humana": true,
-        "resumen": "Cliente presenta reclamo asociado a cobros, pagos, plan o facturación.",
-        "motivo_decision": "El reclamo involucra información comercial o de facturación que debe revisar postventa.",
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "TECNICO_NO_ASISTE",
+        "motivo_decision": "El usuario indica que el técnico no asistió o no cumplió la visita.",
+        "confianza": 0.91
+      }
+    },
+    {
+      "nombre": "instalacion_pendiente",
+      "contiene": ["instalacion pendiente", "instalación pendiente", "no me instalan", "no han instalado", "instalar", "instalación atrasada", "instalacion atrasada"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "INSTALACION_PENDIENTE",
+        "motivo_decision": "El usuario reclama instalación pendiente o retrasada.",
         "confianza": 0.86
       }
     },
     {
       "nombre": "baja_servicio",
-      "contiene": ["baja", "cancelar", "renunciar", "terminar contrato"],
+      "contiene": ["dar de baja", "baja del servicio", "cancelar", "renunciar", "terminar contrato", "quiero darme de baja", "baja servicio"],
       "respuesta": {
-        "decision_derivador": "DERIVADO_HUMANO",
-        "categoria": "BAJA_SERVICIO",
-        "prioridad": "ALTA",
-        "perfil_destino": "POSTVENTA",
-        "requiere_atencion_humana": true,
-        "resumen": "Cliente menciona intención de dar de baja o cancelar el servicio.",
-        "motivo_decision": "Las solicitudes de baja requieren gestión humana y validación comercial.",
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "BAJA_SERVICIO",
+        "motivo_decision": "El usuario expresa intención de cancelar o dar de baja el servicio.",
         "confianza": 0.89
       }
     },
     {
-      "nombre": "consulta_simple_resuelta_ia",
-      "contiene": ["consulta", "información", "informacion"],
+      "nombre": "corte_servicio",
+      "contiene": ["corte de servicio", "me cortaron", "servicio cortado", "suspendieron", "suspension", "suspensión", "cortaron el servicio"],
       "respuesta": {
-        "decision_derivador": "RESUELTO_IA",
-        "categoria": "SOPORTE_DIGITAL",
-        "prioridad": "BAJA",
-        "perfil_destino": "NINGUNO",
-        "requiere_atencion_humana": false,
-        "agresividad": "BAJA",
-        "riesgo_reputacional": "BAJO",
-        "riesgo_legal": "BAJO",
-        "resumen": "Comentario de baja complejidad que puede ser respondido automáticamente.",
-        "respuesta_sugerida": "Hola, gracias por escribirnos. Para ayudarte, envíanos un mensaje privado con el detalle de tu consulta.",
-        "motivo_decision": "El caso puede ser contenido con una respuesta automática inicial.",
-        "confianza": 0.7
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "CORTE_SERVICIO",
+        "motivo_decision": "El usuario reporta corte o suspensión del servicio.",
+        "confianza": 0.88
+      }
+    },
+    {
+      "nombre": "soporte_digital",
+      "contiene": ["app", "aplicacion", "aplicación", "sucursal virtual", "pagina", "página", "web", "clave", "no puedo entrar", "portal", "canal digital"],
+      "respuesta": {
+        "es_reclamo_valido": true,
+        "tipo_incidencia": "SOPORTE_DIGITAL",
+        "motivo_decision": "El usuario reporta problemas con canales digitales o acceso.",
+        "confianza": 0.82
       }
     }
   ]

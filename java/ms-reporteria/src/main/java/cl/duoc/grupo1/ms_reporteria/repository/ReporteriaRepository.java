@@ -2,6 +2,7 @@ package cl.duoc.grupo1.ms_reporteria.repository;
 
 import cl.duoc.grupo1.ms_reporteria.dto.IndicadorConteoResponse;
 import cl.duoc.grupo1.ms_reporteria.dto.ResumenReporteriaResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,7 +14,7 @@ public class ReporteriaRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public ReporteriaRepository(JdbcTemplate jdbcTemplate) {
+    public ReporteriaRepository(@Qualifier("jdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 

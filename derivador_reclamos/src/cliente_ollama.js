@@ -4,8 +4,9 @@ function construirPromptUsuario(comentario) {
   return [
     config.ollama.promptBase,
     '',
-    'Comentario a analizar:',
+    'Comentario a clasificar:',
     JSON.stringify({
+      usuario_comentario: comentario.usuario_comentario,
       plataforma: comentario.plataforma,
       tipo_publicacion: comentario.tipo_publicacion,
       url_publicacion: comentario.url_publicacion,
@@ -72,4 +73,5 @@ async function analizarComentarioConOllama(comentario) {
 
 module.exports = {
   analizarComentarioConOllama,
+  construirPromptUsuario,
 };

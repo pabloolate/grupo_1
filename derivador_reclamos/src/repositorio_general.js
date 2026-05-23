@@ -1,7 +1,6 @@
 const { poolGeneral } = require('./db');
 
 const ESTADOS_CERRADOS = [
-  'RESUELTO_IA',
   'RESUELTO_HUMANO',
   'CERRADO',
   'DESCARTADO',
@@ -13,7 +12,11 @@ function normalizarNombreCatalogo(nombre) {
   return String(nombre || '').trim().toUpperCase();
 }
 
-async function obtenerIdPorNombre(cliente, tabla, nombre) {
+function normalizarTexto(valor) {
+  return String(valor || '').replace(/\s+/g, ' ').trim();
+}
+
+async function obtenerIdPorNombre(cliente, tabla, nombre, fallback = null) {
   const resultado = await cliente.query(
     `
     SELECT id
@@ -26,11 +29,29 @@ async function obtenerIdPorNombre(cliente, tabla, nombre) {
     [normalizarNombreCatalogo(nombre)]
   );
 
-  if (resultado.rowCount === 0) {
-    throw new Error(`No existe catálogo activo en ${tabla} con nombre ${nombre}`);
+  if (resultado.rowCount > 0) {
+    return resultado.rows[0].id;
   }
 
-  return resultado.rows[0].id;
+  if (fallback) {
+    const resultadoFallback = await cliente.query(
+      `
+      SELECT id
+      FROM ${tabla}
+      WHERE UPPER(nombre) = $1
+        AND activo = true
+      ORDER BY id ASC
+      LIMIT 1;
+      `,
+      [normalizarNombreCatalogo(fallback)]
+    );
+
+    if (resultadoFallback.rowCount > 0) {
+      return resultadoFallback.rows[0].id;
+    }
+  }
+
+  throw new Error(`No existe catálogo activo en ${tabla} con nombre ${nombre}`);
 }
 
 async function asegurarEstado(cliente, nombre, descripcion) {
@@ -89,7 +110,6 @@ async function asegurarEstado(cliente, nombre, descripcion) {
 async function asegurarEstadosOperativos(cliente) {
   await asegurarEstado(cliente, 'RECIBIDO', 'Reclamo recibido por el sistema.');
   await asegurarEstado(cliente, 'CLASIFICADO_IA', 'Reclamo clasificado por inteligencia artificial.');
-  await asegurarEstado(cliente, 'RESUELTO_IA', 'Reclamo resuelto automáticamente por inteligencia artificial.');
   await asegurarEstado(cliente, 'PENDIENTE_ASIGNACION', 'Reclamo pendiente de asignación por falta de cupo.');
   await asegurarEstado(cliente, 'ASIGNADO_HUMANO', 'Reclamo asignado a un ejecutivo humano.');
   await asegurarEstado(cliente, 'EN_GESTION', 'Reclamo en gestión por personal humano.');
@@ -114,21 +134,10 @@ async function obtenerCatalogosBase(cliente) {
   const resultadoCategorias = await cliente.query(`SELECT id, nombre FROM categorias_reclamo WHERE activo = true;`);
   const resultadoCanales = await cliente.query(`SELECT id, nombre FROM canales WHERE activo = true;`);
 
-  for (const fila of resultadoEstados.rows) {
-    estados[normalizarNombreCatalogo(fila.nombre)] = fila.id;
-  }
-
-  for (const fila of resultadoPrioridades.rows) {
-    prioridades[normalizarNombreCatalogo(fila.nombre)] = fila.id;
-  }
-
-  for (const fila of resultadoCategorias.rows) {
-    categorias[normalizarNombreCatalogo(fila.nombre)] = fila.id;
-  }
-
-  for (const fila of resultadoCanales.rows) {
-    canales[normalizarNombreCatalogo(fila.nombre)] = fila.id;
-  }
+  for (const fila of resultadoEstados.rows) estados[normalizarNombreCatalogo(fila.nombre)] = fila.id;
+  for (const fila of resultadoPrioridades.rows) prioridades[normalizarNombreCatalogo(fila.nombre)] = fila.id;
+  for (const fila of resultadoCategorias.rows) categorias[normalizarNombreCatalogo(fila.nombre)] = fila.id;
+  for (const fila of resultadoCanales.rows) canales[normalizarNombreCatalogo(fila.nombre)] = fila.id;
 
   return {
     estados,
@@ -141,46 +150,55 @@ async function obtenerCatalogosBase(cliente) {
 function resolverCanal(plataforma) {
   const valor = normalizarNombreCatalogo(plataforma);
 
-  if (valor.includes('INSTAGRAM')) {
-    return 'INSTAGRAM';
-  }
-
-  if (valor.includes('TIKTOK')) {
-    return 'TIKTOK';
-  }
-
-  if (valor.includes('FACEBOOK')) {
-    return 'FACEBOOK';
-  }
-
-  if (valor.includes('WHATSAPP')) {
-    return 'WHATSAPP';
-  }
+  if (valor.includes('INSTAGRAM')) return 'INSTAGRAM';
+  if (valor.includes('TIKTOK')) return 'TIKTOK';
+  if (valor.includes('FACEBOOK')) return 'FACEBOOK';
+  if (valor.includes('WHATSAPP')) return 'WHATSAPP';
 
   return 'OTRO';
 }
 
-function resolverEstadoObjetivo(analisis) {
-  if (!analisis.es_reclamo_valido || analisis.decision_derivador === 'DESCARTADO') {
-    return 'DESCARTADO';
+function resolverCategoriaGeneral(tipoIncidencia) {
+  const tipo = normalizarNombreCatalogo(tipoIncidencia);
+
+  if ([
+    'SIN_SERVICIO_INTERNET',
+    'INTERMITENCIA_INTERNET',
+    'BAJA_VELOCIDAD',
+    'PROBLEMA_WIFI_ROUTER',
+    'CORTE_SERVICIO',
+  ].includes(tipo)) {
+    return 'INTERNET';
   }
 
-  if (
-    analisis.decision_derivador === 'RESUELTO_IA' ||
-    analisis.requiere_atencion_humana === false ||
-    analisis.perfil_destino === 'NINGUNO'
-  ) {
-    return 'RESUELTO_IA';
+  if (tipo === 'PROBLEMA_TV_CABLE') return 'TELEVISION';
+  if (tipo === 'PROBLEMA_TELEFONIA') return 'TELEFONIA';
+
+  if ([
+    'COBRO_INDEBIDO',
+    'PROBLEMA_FACTURACION',
+    'PAGO_NO_RECONOCIDO',
+  ].includes(tipo)) {
+    return 'FACTURACION';
   }
 
-  if (
-    analisis.decision_derivador === 'ESCALADO_OPERACIONES' ||
-    analisis.decision_derivador === 'ESCALADO_GERENCIA'
-  ) {
-    return 'ESCALADO';
-  }
+  if (tipo === 'MALA_ATENCION') return 'MALA_ATENCION';
+  if (tipo === 'TECNICO_NO_ASISTE' || tipo === 'INSTALACION_PENDIENTE') return 'INSTALACION';
+  if (tipo === 'BAJA_SERVICIO') return 'BAJA_SERVICIO';
+  if (tipo === 'SOPORTE_DIGITAL') return 'SOPORTE_DIGITAL';
+  if (tipo === 'RIESGO_LEGAL_REPUTACIONAL') return 'MALA_ATENCION';
 
-  return 'ASIGNADO_HUMANO';
+  return 'OTRO';
+}
+
+function resolverPerfilAsignacion(areaDerivacion) {
+  const area = normalizarNombreCatalogo(areaDerivacion);
+
+  if (area === 'POSTVENTA') return 'POSTVENTA';
+  if (area === 'OPERACIONES') return 'OPERACIONES';
+  if (area === 'GERENCIA') return 'GERENCIA';
+
+  return 'ATENCION_CLIENTE';
 }
 
 function crearCodigoReclamo() {
@@ -193,10 +211,19 @@ function crearCodigoReclamo() {
   return `VTR-${yyyy}${mm}${dd}-${random}`;
 }
 
+function resolverNombreCliente(comentario) {
+  const usuario = normalizarTexto(comentario.usuario_comentario)
+    .replace(/^@+/, '')
+    .trim();
+
+  if (usuario) return usuario.slice(0, 255);
+
+  const canal = resolverCanal(comentario.plataforma);
+  return `Usuario ${canal}`;
+}
+
 async function buscarUsuarioDisponiblePorPerfil(cliente, perfilDestino) {
-  if (!perfilDestino || perfilDestino === 'NINGUNO') {
-    return null;
-  }
+  if (!perfilDestino) return null;
 
   const resultado = await cliente.query(
     `
@@ -242,14 +269,12 @@ async function buscarUsuarioDisponiblePorPerfil(cliente, perfilDestino) {
     [normalizarNombreCatalogo(perfilDestino), ESTADOS_CERRADOS]
   );
 
-  if (resultado.rowCount === 0) {
-    return null;
-  }
+  if (resultado.rowCount === 0) return null;
 
   return resultado.rows[0];
 }
 
-async function crearReclamoDesdeComentario({ comentario, analisis }) {
+async function crearReclamoGeneralDesdeCaso({ comentario, analisis, catalogo, caso }) {
   const cliente = await poolGeneral.connect();
 
   try {
@@ -259,26 +284,40 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
 
     const nombreCanal = resolverCanal(comentario.plataforma);
     const canalId = catalogos.canales[nombreCanal] || catalogos.canales.OTRO;
-    const categoriaId = catalogos.categorias[analisis.categoria] || catalogos.categorias.OTRO;
-    const prioridadId = catalogos.prioridades[analisis.prioridad] || catalogos.prioridades.MEDIA;
 
-    let estadoObjetivo = resolverEstadoObjetivo(analisis);
+    const categoriaGeneral = resolverCategoriaGeneral(catalogo.tipo_incidencia);
+    const categoriaId = catalogos.categorias[categoriaGeneral] || catalogos.categorias.OTRO;
+
+    const prioridadNombre = normalizarNombreCatalogo(catalogo.prioridad);
+    const prioridadId = catalogos.prioridades[prioridadNombre] || catalogos.prioridades.MEDIA;
+
+    const perfilAsignacion = resolverPerfilAsignacion(catalogo.area_derivacion);
+
     let usuarioAsignadoId = null;
+    let estadoObjetivo = 'PENDIENTE_ASIGNACION';
 
-    if (analisis.requiere_atencion_humana && estadoObjetivo !== 'DESCARTADO') {
-      const usuarioDisponible = await buscarUsuarioDisponiblePorPerfil(cliente, analisis.perfil_destino);
+    const usuarioDisponible = await buscarUsuarioDisponiblePorPerfil(cliente, perfilAsignacion);
 
-      if (usuarioDisponible) {
-        usuarioAsignadoId = usuarioDisponible.usuario_id;
-      } else {
-        estadoObjetivo = 'PENDIENTE_ASIGNACION';
-      }
+    if (usuarioDisponible) {
+      usuarioAsignadoId = usuarioDisponible.usuario_id;
+      estadoObjetivo = 'ASIGNADO_HUMANO';
     }
 
     const estadoId = catalogos.estados[estadoObjetivo] || catalogos.estados.RECIBIDO;
-
-    const asunto = analisis.resumen.slice(0, 240);
     const codigoReclamo = crearCodigoReclamo();
+    const nombreCliente = resolverNombreCliente(comentario);
+
+    const asunto = `[${catalogo.tipo_incidencia}] ${normalizarTexto(comentario.texto_comentario).slice(0, 180)}`;
+
+    const payloadNormalizado = {
+      caso_derivacion_id: caso.id,
+      usuario_comentario: caso.usuario_comentario,
+      tipo_incidencia: catalogo.tipo_incidencia,
+      area_derivacion: catalogo.area_derivacion,
+      prioridad: catalogo.prioridad,
+      motivo_decision: analisis.motivo_decision,
+      confianza: analisis.confianza,
+    };
 
     const reclamoEntrante = await cliente.query(
       `
@@ -306,11 +345,11 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
       [
         canalId,
         comentario.hash_comentario,
-        `Usuario ${nombreCanal}`,
+        nombreCliente,
         asunto,
         comentario.texto_comentario,
         JSON.stringify(comentario),
-        JSON.stringify(analisis),
+        JSON.stringify(payloadNormalizado),
         estadoObjetivo,
       ]
     );
@@ -338,9 +377,9 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
         fecha_actualizacion
       )
       VALUES (
-        $1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11,
-        CASE WHEN $11 = false THEN CURRENT_TIMESTAMP ELSE NULL END,
-        CASE WHEN $11 = false THEN CURRENT_TIMESTAMP ELSE NULL END,
+        $1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, true,
+        NULL,
+        NULL,
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
       )
@@ -350,14 +389,13 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
         codigoReclamo,
         canalId,
         reclamoEntranteId,
-        `Usuario ${nombreCanal}`,
+        nombreCliente,
         asunto,
         comentario.texto_comentario,
         categoriaId,
         prioridadId,
         estadoId,
         usuarioAsignadoId,
-        analisis.requiere_atencion_humana,
       ]
     );
 
@@ -380,46 +418,22 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
         fecha_actualizacion
       )
       VALUES (
-        $1, $2, $3, 'NEGATIVA', $4, $5, $6, $7, $8,
+        $1, $2, $3, 'NEGATIVA', $4, NULL, $5, $6, true,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING id;
       `,
       [
         reclamoId,
-        analisis.categoria,
-        analisis.prioridad,
-        analisis.resumen,
-        analisis.respuesta_sugerida,
+        catalogo.tipo_incidencia,
+        catalogo.prioridad,
+        analisis.motivo_decision,
         analisis.confianza,
         process.env.MODO_TEST === 'true' ? 'SIMULADOR_JSON' : process.env.OLLAMA_MODEL,
-        analisis.requiere_atencion_humana,
       ]
     );
 
     const clasificacionId = clasificacion.rows[0].id;
-
-        if (analisis.decision_derivador === 'RESUELTO_IA' && analisis.respuesta_sugerida) {
-      await cliente.query(
-        `
-        INSERT INTO reclamos_comentarios (
-          reclamo_id,
-          usuario_id,
-          comentario,
-          es_interno,
-          fecha_creacion,
-          fecha_actualizacion
-        )
-        VALUES (
-          $1, NULL, $2, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        );
-        `,
-        [
-          reclamoId,
-          analisis.respuesta_sugerida,
-        ]
-      );
-    }
 
     await cliente.query(
       `
@@ -436,17 +450,14 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
         fecha_actualizacion
       )
       VALUES (
-        $1, NULL, NULL, $2, NULL, $3, $4, $5,
+        $1, NULL, NULL, $2, NULL, $3, 'DERIVADO', $4,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       );
       `,
-            [
+      [
         reclamoId,
         estadoId,
         prioridadId,
-        analisis.decision_derivador === 'RESUELTO_IA'
-          ? 'RESPUESTA_AUTOMATICA_IA'
-          : analisis.decision_derivador,
         analisis.motivo_decision,
       ]
     );
@@ -469,5 +480,5 @@ async function crearReclamoDesdeComentario({ comentario, analisis }) {
 }
 
 module.exports = {
-  crearReclamoDesdeComentario,
+  crearReclamoGeneralDesdeCaso,
 };

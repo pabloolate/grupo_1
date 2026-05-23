@@ -45,7 +45,6 @@ async function registrarComentariosNuevosEnControl({ limite = 50 } = {}) {
     );
 
     await cliente.query('COMMIT');
-
     return resultado.rows;
   } catch (error) {
     await cliente.query('ROLLBACK');
@@ -79,6 +78,7 @@ async function obtenerComentariosPendientes({ limite = 10 } = {}) {
       c.plataforma,
       c.tipo_publicacion,
       c.url_publicacion,
+      c.usuario_comentario,
       c.texto_comentario,
       c.sentimiento,
       c.puntaje,
@@ -115,9 +115,13 @@ async function marcarControlEnProceso(controlId) {
 async function marcarControlProcesado({
   controlId,
   estadoDerivacion,
+  casoDerivacionId,
   reclamoEntranteId,
   reclamoId,
   clasificacionId,
+  tipoIncidencia,
+  areaDerivacion,
+  prioridad,
   decisionDerivador,
   motivoDecision,
 }) {
@@ -126,11 +130,15 @@ async function marcarControlProcesado({
     UPDATE derivador_control_comentarios
     SET estado_derivacion = $2,
         fecha_procesado = NOW(),
-        reclamo_entrante_id_generado = $3,
-        reclamo_id_generado = $4,
-        clasificacion_id_generada = $5,
-        decision_derivador = $6,
-        motivo_decision = $7,
+        caso_derivacion_id = $3,
+        reclamo_entrante_id_generado = $4,
+        reclamo_id_generado = $5,
+        clasificacion_id_generada = $6,
+        tipo_incidencia = $7,
+        area_derivacion = $8,
+        prioridad = $9,
+        decision_derivador = $10,
+        motivo_decision = $11,
         error_derivacion = NULL,
         updated_at = NOW()
     WHERE id = $1;
@@ -138,9 +146,13 @@ async function marcarControlProcesado({
     [
       controlId,
       estadoDerivacion,
+      casoDerivacionId,
       reclamoEntranteId,
       reclamoId,
       clasificacionId,
+      tipoIncidencia,
+      areaDerivacion,
+      prioridad,
       decisionDerivador,
       motivoDecision,
     ]

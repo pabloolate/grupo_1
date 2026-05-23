@@ -2,7 +2,13 @@ const config = require('./config');
 const { simularAnalisisIa } = require('./simulador_ia');
 const { analizarComentarioConOllama } = require('./cliente_ollama');
 const { normalizarAnalisisIa } = require('./normalizador_ia');
-const { crearReclamoDesdeComentario } = require('./repositorio_general');
+const { crearReclamoGeneralDesdeCaso } = require('./repositorio_general');
+const {
+  obtenerCatalogoTipoIncidencia,
+  crearOActualizarCasoDerivacion,
+  actualizarCasoConReclamoGenerado,
+} = require('./repositorio_casos');
+
 const {
   obtenerComentariosPendientes,
   marcarControlEnProceso,
@@ -18,22 +24,6 @@ async function obtenerAnalisisIa(comentario) {
   return analizarComentarioConOllama(comentario);
 }
 
-function resolverEstadoControl(analisis, resultadoCreacion) {
-  if (!analisis.es_reclamo_valido || analisis.decision_derivador === 'DESCARTADO') {
-    return 'DESCARTADO';
-  }
-
-  if (resultadoCreacion.estado_objetivo === 'PENDIENTE_ASIGNACION') {
-    return 'SIN_CUPO_ASIGNACION';
-  }
-
-  if (analisis.decision_derivador === 'RESUELTO_IA') {
-    return 'PROCESADO_RESUELTO_IA';
-  }
-
-  return 'PROCESADO_DERIVADO_HUMANO';
-}
-
 async function procesarComentarioPendiente(comentario) {
   await marcarControlEnProceso(comentario.control_id);
 
@@ -41,20 +31,74 @@ async function procesarComentarioPendiente(comentario) {
     const analisisOriginal = await obtenerAnalisisIa(comentario);
     const analisis = normalizarAnalisisIa(analisisOriginal);
 
-    const resultadoCreacion = await crearReclamoDesdeComentario({
+    if (!analisis.es_reclamo_valido) {
+      await marcarControlProcesado({
+        controlId: comentario.control_id,
+        estadoDerivacion: 'DESCARTADO',
+        casoDerivacionId: null,
+        reclamoEntranteId: null,
+        reclamoId: null,
+        clasificacionId: null,
+        tipoIncidencia: 'NO_CLASIFICADO',
+        areaDerivacion: null,
+        prioridad: null,
+        decisionDerivador: 'DESCARTADO',
+        motivoDecision: analisis.motivo_decision,
+      });
+
+      return {
+        ok: true,
+        control_id: comentario.control_id,
+        comentario_negativo_id: comentario.comentario_negativo_id,
+        estado_control: 'DESCARTADO',
+        tipo_incidencia: 'NO_CLASIFICADO',
+      };
+    }
+
+    const catalogo = await obtenerCatalogoTipoIncidencia(analisis.tipo_incidencia);
+
+    const resultadoCaso = await crearOActualizarCasoDerivacion({
       comentario,
       analisis,
+      catalogo,
     });
 
-    const estadoControl = resolverEstadoControl(analisis, resultadoCreacion);
+    let resultadoGeneral = {
+      reclamo_entrante_id: resultadoCaso.caso.reclamo_entrante_id_generado || null,
+      reclamo_id: resultadoCaso.caso.reclamo_id_generado || null,
+      clasificacion_id: resultadoCaso.caso.clasificacion_id_generada || null,
+      usuario_asignado_id: resultadoCaso.caso.usuario_asignado_id || null,
+      estado_objetivo: null,
+    };
+
+    if (resultadoCaso.accion === 'DERIVADO') {
+      resultadoGeneral = await crearReclamoGeneralDesdeCaso({
+        comentario,
+        analisis,
+        catalogo,
+        caso: resultadoCaso.caso,
+      });
+
+      await actualizarCasoConReclamoGenerado({
+        casoDerivacionId: resultadoCaso.caso.id,
+        reclamoEntranteId: resultadoGeneral.reclamo_entrante_id,
+        reclamoId: resultadoGeneral.reclamo_id,
+        clasificacionId: resultadoGeneral.clasificacion_id,
+        usuarioAsignadoId: resultadoGeneral.usuario_asignado_id,
+      });
+    }
 
     await marcarControlProcesado({
       controlId: comentario.control_id,
-      estadoDerivacion: estadoControl,
-      reclamoEntranteId: resultadoCreacion.reclamo_entrante_id,
-      reclamoId: resultadoCreacion.reclamo_id,
-      clasificacionId: resultadoCreacion.clasificacion_id,
-      decisionDerivador: analisis.decision_derivador,
+      estadoDerivacion: resultadoCaso.accion,
+      casoDerivacionId: resultadoCaso.caso.id,
+      reclamoEntranteId: resultadoGeneral.reclamo_entrante_id,
+      reclamoId: resultadoGeneral.reclamo_id,
+      clasificacionId: resultadoGeneral.clasificacion_id,
+      tipoIncidencia: catalogo.tipo_incidencia,
+      areaDerivacion: catalogo.area_derivacion,
+      prioridad: catalogo.prioridad,
+      decisionDerivador: resultadoCaso.accion,
       motivoDecision: analisis.motivo_decision,
     });
 
@@ -62,13 +106,14 @@ async function procesarComentarioPendiente(comentario) {
       ok: true,
       control_id: comentario.control_id,
       comentario_negativo_id: comentario.comentario_negativo_id,
-      decision: analisis.decision_derivador,
-      categoria: analisis.categoria,
-      prioridad: analisis.prioridad,
-      perfil_destino: analisis.perfil_destino,
-      estado_control: estadoControl,
-      reclamo_id: resultadoCreacion.reclamo_id,
-      usuario_asignado_id: resultadoCreacion.usuario_asignado_id,
+      usuario_comentario: comentario.usuario_comentario,
+      estado_control: resultadoCaso.accion,
+      caso_derivacion_id: resultadoCaso.caso.id,
+      tipo_incidencia: catalogo.tipo_incidencia,
+      area_derivacion: catalogo.area_derivacion,
+      prioridad: catalogo.prioridad,
+      reclamo_id: resultadoGeneral.reclamo_id,
+      usuario_asignado_id: resultadoGeneral.usuario_asignado_id,
     };
   } catch (error) {
     await marcarControlError({
@@ -102,4 +147,5 @@ async function procesarPendientes() {
 
 module.exports = {
   procesarPendientes,
+  procesarComentarioPendiente,
 };

@@ -54,13 +54,29 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
   if (!urlPublicacion) throw new Error('No se puede guardar publicación sin link/url_publicacion');
 
   const negativosLimpios = (Array.isArray(negativos) ? negativos : [])
-    .map((n) => ({
-      texto_comentario: normalizarTexto(n.texto_comentario || n.comentario || n.texto || ''),
-      sentimiento: 'negativo',
-      puntaje: Number(n.puntaje || 1) || 1,
-      likes: Number(n.likes || 0) || 0,
-      replies: Number(n.replies || n.respuestas || 0) || 0,
-    }))
+    .map((n) => {
+      const usuarioComentario = normalizarTexto(
+        n.usuario_comentario ||
+        n.usuario ||
+        n.autor ||
+        n.username ||
+        n.handle ||
+        ''
+      )
+        .replace(/^@+/, '')
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '')
+        .trim();
+
+      return {
+        usuario_comentario: usuarioComentario || null,
+        texto_comentario: normalizarTexto(n.texto_comentario || n.comentario || n.texto || ''),
+        sentimiento: 'negativo',
+        puntaje: Number(n.puntaje || 1) || 1,
+        likes: Number(n.likes || 0) || 0,
+        replies: Number(n.replies || n.respuestas || 0) || 0,
+      };
+    })
     .filter((n) => n.texto_comentario);
 
   if (!negativosLimpios.length) {
@@ -128,17 +144,29 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
 
     await db.query(`
       INSERT INTO comentarios_negativos (
-        publicacion_id, plataforma, tipo_publicacion, url_publicacion,
-        hash_comentario, texto_comentario, sentimiento, puntaje, likes, replies, fecha_scraping
+        publicacion_id,
+        plataforma,
+        tipo_publicacion,
+        url_publicacion,
+        usuario_comentario,
+        hash_comentario,
+        texto_comentario,
+        sentimiento,
+        puntaje,
+        likes,
+        replies,
+        fecha_scraping
       ) VALUES (
         $1, $2, $3, $4,
-        $5, $6, $7, $8, $9, $10, $11
+        $5, $6, $7, $8,
+        $9, $10, $11, $12
       )
       ON CONFLICT (hash_comentario) DO UPDATE SET
         publicacion_id = EXCLUDED.publicacion_id,
         plataforma = EXCLUDED.plataforma,
         tipo_publicacion = EXCLUDED.tipo_publicacion,
         url_publicacion = EXCLUDED.url_publicacion,
+        usuario_comentario = EXCLUDED.usuario_comentario,
         texto_comentario = EXCLUDED.texto_comentario,
         sentimiento = EXCLUDED.sentimiento,
         puntaje = EXCLUDED.puntaje,
@@ -151,6 +179,7 @@ async function guardarPostConNegativos({ post, negativos, urlOrigen }) {
       plataforma,
       tipoPublicacion,
       urlPublicacion,
+      negativo.usuario_comentario,
       hashComentario,
       negativo.texto_comentario,
       'negativo',

@@ -3,9 +3,11 @@ const { poolScraping, poolGeneral, cerrarPools } = require('./db');
 async function probarConexionScraping() {
   const resultado = await poolScraping.query(`
     SELECT 
-      COUNT(*)::int AS total_comentarios,
-      COUNT(DISTINCT hash_comentario)::int AS hashes_unicos
-    FROM comentarios_negativos;
+      (SELECT COUNT(*)::int FROM comentarios_negativos) AS total_comentarios,
+      (SELECT COUNT(*)::int FROM derivador_control_comentarios) AS total_control,
+      (SELECT COUNT(*)::int FROM casos_derivacion) AS total_casos,
+      (SELECT COUNT(*)::int FROM casos_derivacion_comentarios) AS total_evidencias,
+      (SELECT COUNT(*)::int FROM catalogo_tipos_incidencia WHERE activo = true) AS total_tipos_activos;
   `);
 
   console.log('[BD scraping] OK:', resultado.rows[0]);
@@ -26,7 +28,7 @@ async function main() {
   try {
     await probarConexionScraping();
     await probarConexionGeneral();
-    console.log('[test_db] Conexiones listas, la wea está andando.');
+    console.log('[test_db] Conexiones listas, sistema andando.');
   } catch (error) {
     console.error('[test_db] Error:', error.message);
     process.exitCode = 1;

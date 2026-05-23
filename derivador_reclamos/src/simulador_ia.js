@@ -38,13 +38,17 @@ function simularAnalisisIa(comentario) {
   const configuracion = leerConfiguracionSimulacion();
   const texto = normalizarTextoBusqueda(comentario.texto_comentario);
 
-  const respuestaBase = configuracion.respuesta_base || {};
+  const respuestaBase = configuracion.respuesta_base || {
+    es_reclamo_valido: true,
+    tipo_incidencia: 'RECLAMO_GENERAL',
+    motivo_decision: 'Comentario negativo general detectado por simulación.',
+    confianza: 0.7,
+  };
+
   const reglas = Array.isArray(configuracion.reglas) ? configuracion.reglas : [];
 
   for (const regla of reglas) {
-    if (!Array.isArray(regla.contiene)) {
-      continue;
-    }
+    if (!Array.isArray(regla.contiene)) continue;
 
     if (contieneAlgunaPalabra(texto, regla.contiene)) {
       return unirRespuesta(respuestaBase, regla.respuesta || {});

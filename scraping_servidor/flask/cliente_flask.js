@@ -89,6 +89,33 @@ function extraerRepliesComentario(comentario) {
   return Number(comentario.replies ?? comentario.respuestas ?? comentario.total_respuestas ?? 0) || 0;
 }
 
+function extraerUsuarioComentario(comentario) {
+  if (!comentario || typeof comentario !== 'object') {
+    return null;
+  }
+
+  const indiceDinamico = obtenerIndiceComentarioDinamico(comentario);
+
+  const usuario = indiceDinamico
+    ? comentario[`usuario_comentario_${indiceDinamico}`]
+    : (
+        comentario.usuario_comentario ||
+        comentario.usuario ||
+        comentario.autor ||
+        comentario.username ||
+        comentario.handle ||
+        null
+      );
+
+  const usuarioNormalizado = normalizarTexto(usuario)
+    .replace(/^@+/, '')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .trim();
+
+  return usuarioNormalizado || null;
+}
+
 function normalizarSentimiento(valor) {
   const texto = normalizarTexto(valor).toLowerCase();
 
@@ -130,10 +157,13 @@ function construirComentariosParaFlask(post) {
 
 function construirComentarioNegativoNormalizado({ comentarioOriginal, textoComentario }) {
   const texto = extraerTextoComentario(comentarioOriginal) || normalizarTexto(textoComentario);
+  const usuarioComentario = extraerUsuarioComentario(comentarioOriginal);
 
   return {
     texto,
     comentario: texto,
+    texto_comentario: texto,
+    usuario_comentario: usuarioComentario,
     sentimiento: 'Negativo',
     puntaje: comentarioOriginal?.puntaje ?? comentarioOriginal?.score ?? null,
     likes: extraerLikesComentario(comentarioOriginal),
@@ -225,5 +255,6 @@ module.exports = {
   enviarComentariosAlFlask,
   construirComentariosParaFlask,
   extraerTextoComentario,
+  extraerUsuarioComentario,
   normalizarSentimiento,
 };
