@@ -1,48 +1,45 @@
-# Sentimentalizador Simple
+# Scraping Servidor - Captura de reclamos no formales
 
-Sistema reducido desde el sentimentalizador grande:
+Microservicio Node.js encargado de capturar comentarios públicos desde Instagram y TikTok, enviarlos al servicio Flask de análisis de sentimiento y persistir en PostgreSQL las publicaciones que contienen comentarios negativos.
 
-- Instagram posts con Puppeteer.
-- Instagram reels con Puppeteer.
-- TikTok con Puppeteer para capturar links del perfil.
-- TikTok con Playwright/CDP para entrar a cada video y sacar comentarios.
-- Flask externo recibe `data_hijos` simple.
-- Node filtra y guarda solo comentarios negativos.
-- Post sin comentarios se descarta.
-- Post con comentarios pero sin negativos no se guarda.
-- Imágenes/capturas quedan en carpeta local `imagenes/`.
-- Persistencia directa en MySQL/MariaDB.
+Este componente forma parte de una plataforma mayor de centralización, análisis, jerarquización y derivación de reclamos no formales en canales digitales.
 
-## Instalación
+Su función no es resolver reclamos ni derivarlos directamente a una plataforma final. Su responsabilidad es alimentar la base operacional con comentarios negativos detectados desde redes sociales, dejando la información preparada para las etapas posteriores del sistema.
 
-```bash
-npm install
-cp .env.example .env
-node --expose-gc index.js
-```
+## Alcance actual
 
-## Endpoints
+El alcance actual del microservicio considera:
 
-```bash
-GET /health
-POST /scrapeHTML
-POST /generar
-```
+- Instagram posts.
+- Instagram reels.
+- TikTok.
+- Captura de publicaciones.
+- Captura de comentarios.
+- Captura de fechas de comentarios.
+- Envío de comentarios al servicio Flask de sentimentalización.
+- Filtro de comentarios negativos.
+- Persistencia en PostgreSQL.
+- Guardado local de imágenes o capturas cuando corresponde.
 
-Ejemplo:
+Otros canales como WhatsApp, correo, formularios web, Facebook, CRM o call center quedan considerados como evolución futura del sistema general, pero no forman parte de este microservicio en su versión actual.
 
-```json
-{
-  "url": "https://www.instagram.com/usuario/",
-  "tipo": "instagram_post",
-  "max_items": 10
-}
-```
+## Rol dentro del sistema general
 
-Tipos válidos:
+Este módulo actúa como capa de captura y prefiltrado.
 
-```txt
-instagram_post
-instagram_reel
-tiktok
-```
+Flujo general:
+
+```text
+Instagram / TikTok
+        ↓
+scraping_servidor
+        ↓
+normalización de publicaciones y comentarios
+        ↓
+flask_servicio /predecir
+        ↓
+filtrado de comentarios negativos
+        ↓
+PostgreSQL
+        ↓
+derivador / backend / frontend

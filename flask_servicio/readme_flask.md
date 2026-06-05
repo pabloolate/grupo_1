@@ -1,91 +1,32 @@
-# Sentimentalizador Flask
 
-Servicio Flask mínimo para sentimentalizar comentarios usando un modelo guardado en la carpeta `results`.
+## `readme_flask.md`
 
-## Requisitos
+```md
+# Flask Servicio - Análisis de sentimiento
 
-* **Python 3.11** recomendado
-* PowerShell en Windows
-* Carpeta `results` al lado de `sentimentalizador.py`
+Servicio Flask encargado de clasificar comentarios según polaridad utilizando un modelo entrenado basado en XLM-RoBERTa.
 
-La estructura esperada es esta:
+Este componente forma parte de una plataforma de centralización, análisis, jerarquización y derivación de reclamos no formales en canales digitales.
 
-```text
-flask_servicio/
-├── sentimentalizador.py
-├── README.md
-└── results/
-    ├── entrenamiento_1/
-    ├── entrenamiento_2/
-    └── ...
-```
+Su responsabilidad es recibir comentarios desde el microservicio de scraping y devolver una etiqueta de sentimiento para cada texto.
 
-El script buscará automáticamente el último modelo dentro de `results`.
+## Rol dentro del sistema general
 
-## Crear entorno virtual
+El servicio Flask funciona como filtro inicial de análisis de sentimiento.
 
-En PowerShell, dentro de la carpeta del proyecto:
-
-```powershell
-python -m venv .venv
-```
-
-## Activar entorno virtual
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Si PowerShell bloquea la activación, ejecuta primero:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-Y luego nuevamente:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Cuando quede activo, debería verse algo como esto:
-
-```powershell
-(.venv) PS F:\Node_JS_Proyects\grupo_1\flask_servicio>
-```
-
-## Instalar dependencias
-
-```powershell
-python -m pip install --upgrade pip
-pip install flask transformers torch sentencepiece
-```
-
-## Ejecutar el servicio
-
-```powershell
-python sentimentalizador.py
-```
-
-Por defecto debería levantar en:
+Flujo general:
 
 ```text
-http://127.0.0.1:5000
-```
-
-## Probar health
-
-```powershell
-curl http://127.0.0.1:5000/health
-```
-
-## Probar predicción
-
-```powershell
-curl -X POST http://127.0.0.1:5000/predecir -H "Content-Type: application/json" -d '{"comentarios":["me encanta","que malo"]}'
-```
-
-## Notas
-
-* Usa **Python 3.11** para evitar atados con `torch` y `transformers`.
-* La carpeta `results` debe existir y contener al menos un entrenamiento/modelo válido.
+scraping_servidor
+        ↓
+comentarios capturados desde Instagram y TikTok
+        ↓
+flask_servicio /predecir
+        ↓
+clasificación de sentimiento
+        ↓
+comentarios negativos
+        ↓
+PostgreSQL
+        ↓
+derivador / backend / frontend

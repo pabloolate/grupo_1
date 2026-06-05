@@ -1,41 +1,42 @@
-# MS Integración multicanal
-Node-JS
-Microservicio encargado de la recepción, centralización y normalización de reclamos provenientes de distintos canales digitales.
+
+## `readme_scraping_servidor.md`
+
+```md
+# Microservicio de scraping y captura de reclamos no formales
+
+Node.js
+
+Microservicio encargado de capturar comentarios públicos desde Instagram y TikTok, normalizarlos, enviarlos al servicio Flask de análisis de sentimiento y persistir en base de datos aquellos comentarios negativos que pueden representar reclamos no formales.
+
+Este componente forma parte de una plataforma general de centralización, análisis, jerarquización y derivación de reclamos digitales.
 
 ## Responsabilidad principal
 
-Este módulo actúa como puerta de entrada de reclamos desde diferentes fuentes, tales como:
+La responsabilidad principal de este módulo es obtener datos desde canales digitales no formales y transformarlos en registros iniciales para el flujo de reclamos.
 
-- redes sociales
-- mensajería
-- formularios web
-- correo electrónico
+Actualmente trabaja con:
 
-Su función es capturar la información, estandarizarla y dejarla preparada para que el resto de la plataforma pueda procesarla de forma uniforme.
+- Instagram posts.
+- Instagram reels.
+- TikTok.
+
+Su función es capturar publicaciones y comentarios, preparar los textos, consultar el servicio de análisis de sentimiento y guardar únicamente los comentarios clasificados como negativos.
 
 ## Objetivo dentro de la arquitectura
 
-El propósito de este microservicio es resolver la heterogeneidad de los canales de entrada. Cada plataforma entrega datos en formatos distintos, por lo que este componente unifica la estructura base del reclamo antes de derivarlo a la capa de negocio.
+El propósito de este microservicio es alimentar la base inicial de reclamos no formales detectados en redes sociales.
 
-## Funciones esperadas
+Dentro de la arquitectura general, funciona como la primera capa del flujo:
 
-- recepción de reclamos desde múltiples canales
-- normalización de campos
-- limpieza básica de texto
-- estandarización de estructura de entrada
-- preparación de datos para clasificación y priorización
-- integración con el servicio de IA cuando corresponda
-
-## Base técnica
-
-Este componente se apoya en lógica de scraping e integración multicanal, y se conecta con el servicio Flask de clasificación cuando se requiere apoyo de IA.
-
-## Relación con otros microservicios
-
-- entrega información al microservicio de reclamos
-- puede apoyarse en el servicio Flask para clasificación inicial
-- sirve como capa previa a la lógica de negocio en Java
-
-## Estado dentro del proyecto
-
-Este módulo representa la capa de integración de entrada del sistema y forma parte de la arquitectura general de reclamos omnicanal para retail mediano.
+```text
+Canales digitales
+        ↓
+Scraping
+        ↓
+Análisis de sentimiento
+        ↓
+Comentarios negativos
+        ↓
+Base de datos
+        ↓
+Derivador / backend / frontend

@@ -24,3 +24,34 @@ Clave para todos: `Fullstack2026@`
 - trabajador@demo.cl
 - postventa@demo.cl
 - visor@demo.cl
+
+# Frontend - Gestión Centralizada de Reclamos
+
+Frontend desarrollado en React + Vite para visualizar, operar y supervisar reclamos no formales provenientes de canales digitales.
+
+Este módulo forma parte de una plataforma general de centralización, análisis, jerarquización y derivación de reclamos. Su función es entregar una interfaz operativa para revisar usuarios reclamantes, casos derivados, reclamos agrupados, estados, prioridades, métricas, reportería y trazabilidad.
+
+El sistema no resuelve reclamos directamente. La interfaz permite ordenar, visualizar, priorizar y derivar información hacia las áreas o plataformas reales de atención de la organización.
+
+## Rol dentro del sistema general
+
+El frontend es la capa visual del sistema.
+
+Flujo general:
+
+```text
+Instagram / TikTok
+        ↓
+scraping_servidor
+        ↓
+flask_servicio
+        ↓
+comentarios_negativos
+        ↓
+derivador_reclamos
+        ↓
+microservicios Java
+        ↓
+frontend
+        ↓
+gestión operativa / plataformas reales de atención
