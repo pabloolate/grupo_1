@@ -16,7 +16,65 @@ function normalizarTexto(valor) {
   return String(valor || '').replace(/\s+/g, ' ').trim();
 }
 
-async function obtenerIdPorNombre(cliente, tabla, nombre, fallback = null) {
+function exigirValor(valor, mensaje) {
+  if (valor === undefined || valor === null || valor === '') {
+    throw new Error(mensaje);
+  }
+
+  return valor;
+}
+
+function exigirIdCatalogo(mapa, nombre, nombreCatalogo) {
+  const llave = normalizarNombreCatalogo(nombre);
+  const id = mapa[llave];
+
+  if (!id) {
+    throw new Error(`No existe ${nombreCatalogo} activo con nombre ${llave}.`);
+  }
+
+  return id;
+}
+
+function normalizarFechaComentarioSql(valor, mensaje) {
+  exigirValor(valor, mensaje);
+
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) {
+      throw new Error(`${mensaje} Fecha inválida.`);
+    }
+
+    const yyyy = valor.getFullYear();
+    const mm = String(valor.getMonth() + 1).padStart(2, '0');
+    const dd = String(valor.getDate()).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const texto = String(valor).trim();
+
+  const matchFechaSql = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (matchFechaSql) {
+    return texto;
+  }
+
+  const matchFechaSqlFlexible = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (matchFechaSqlFlexible) {
+    const yyyy = matchFechaSqlFlexible[1];
+    const mm = String(matchFechaSqlFlexible[2]).padStart(2, '0');
+    const dd = String(matchFechaSqlFlexible[3]).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const matchIso = texto.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+  if (matchIso) {
+    return `${matchIso[1]}-${matchIso[2]}-${matchIso[3]}`;
+  }
+
+  throw new Error(`${mensaje} Formato recibido inválido: ${texto}`);
+}
+
+async function obtenerIdPorNombre(cliente, tabla, nombre) {
   const resultado = await cliente.query(
     `
     SELECT id
@@ -29,29 +87,11 @@ async function obtenerIdPorNombre(cliente, tabla, nombre, fallback = null) {
     [normalizarNombreCatalogo(nombre)]
   );
 
-  if (resultado.rowCount > 0) {
-    return resultado.rows[0].id;
+  if (resultado.rowCount === 0) {
+    throw new Error(`No existe catálogo activo en ${tabla} con nombre ${nombre}`);
   }
 
-  if (fallback) {
-    const resultadoFallback = await cliente.query(
-      `
-      SELECT id
-      FROM ${tabla}
-      WHERE UPPER(nombre) = $1
-        AND activo = true
-      ORDER BY id ASC
-      LIMIT 1;
-      `,
-      [normalizarNombreCatalogo(fallback)]
-    );
-
-    if (resultadoFallback.rowCount > 0) {
-      return resultadoFallback.rows[0].id;
-    }
-  }
-
-  throw new Error(`No existe catálogo activo en ${tabla} con nombre ${nombre}`);
+  return resultado.rows[0].id;
 }
 
 async function asegurarEstado(cliente, nombre, descripcion) {
@@ -150,55 +190,59 @@ async function obtenerCatalogosBase(cliente) {
 function resolverCanal(plataforma) {
   const valor = normalizarNombreCatalogo(plataforma);
 
-  if (valor.includes('INSTAGRAM')) return 'INSTAGRAM';
-  if (valor.includes('TIKTOK')) return 'TIKTOK';
-  if (valor.includes('FACEBOOK')) return 'FACEBOOK';
-  if (valor.includes('WHATSAPP')) return 'WHATSAPP';
+  if (valor === 'INSTAGRAM') return 'INSTAGRAM';
+  if (valor === 'TIKTOK') return 'TIKTOK';
 
-  return 'OTRO';
+  throw new Error(`Plataforma no soportada para canal de reclamo: ${valor}`);
 }
 
 function resolverCategoriaGeneral(tipoIncidencia) {
   const tipo = normalizarNombreCatalogo(tipoIncidencia);
 
-  if ([
-    'SIN_SERVICIO_INTERNET',
-    'INTERMITENCIA_INTERNET',
-    'BAJA_VELOCIDAD',
-    'PROBLEMA_WIFI_ROUTER',
-    'CORTE_SERVICIO',
-  ].includes(tipo)) {
-    return 'INTERNET';
+  const mapa = {
+    SIN_SERVICIO_INTERNET: 'INTERNET',
+    INTERMITENCIA_INTERNET: 'INTERNET',
+    BAJA_VELOCIDAD: 'INTERNET',
+    PROBLEMA_WIFI_ROUTER: 'INTERNET',
+    CORTE_SERVICIO: 'INTERNET',
+    PROBLEMA_TV_CABLE: 'TELEVISION',
+    PROBLEMA_TELEFONIA: 'TELEFONIA',
+    COBRO_INDEBIDO: 'FACTURACION',
+    PROBLEMA_FACTURACION: 'FACTURACION',
+    PAGO_NO_RECONOCIDO: 'FACTURACION',
+    MALA_ATENCION: 'MALA_ATENCION',
+    TECNICO_NO_ASISTE: 'INSTALACION',
+    INSTALACION_PENDIENTE: 'INSTALACION',
+    BAJA_SERVICIO: 'BAJA_SERVICIO',
+    SOPORTE_DIGITAL: 'SOPORTE_DIGITAL',
+    RIESGO_LEGAL_REPUTACIONAL: 'MALA_ATENCION',
+    RECLAMO_GENERAL: 'OTRO',
+    NO_CLASIFICADO: 'OTRO',
+  };
+
+  if (!mapa[tipo]) {
+    throw new Error(`No existe mapeo de categoría general para tipo_incidencia: ${tipo}`);
   }
 
-  if (tipo === 'PROBLEMA_TV_CABLE') return 'TELEVISION';
-  if (tipo === 'PROBLEMA_TELEFONIA') return 'TELEFONIA';
-
-  if ([
-    'COBRO_INDEBIDO',
-    'PROBLEMA_FACTURACION',
-    'PAGO_NO_RECONOCIDO',
-  ].includes(tipo)) {
-    return 'FACTURACION';
-  }
-
-  if (tipo === 'MALA_ATENCION') return 'MALA_ATENCION';
-  if (tipo === 'TECNICO_NO_ASISTE' || tipo === 'INSTALACION_PENDIENTE') return 'INSTALACION';
-  if (tipo === 'BAJA_SERVICIO') return 'BAJA_SERVICIO';
-  if (tipo === 'SOPORTE_DIGITAL') return 'SOPORTE_DIGITAL';
-  if (tipo === 'RIESGO_LEGAL_REPUTACIONAL') return 'MALA_ATENCION';
-
-  return 'OTRO';
+  return mapa[tipo];
 }
 
 function resolverPerfilAsignacion(areaDerivacion) {
   const area = normalizarNombreCatalogo(areaDerivacion);
 
-  if (area === 'POSTVENTA') return 'POSTVENTA';
-  if (area === 'OPERACIONES') return 'OPERACIONES';
-  if (area === 'GERENCIA') return 'GERENCIA';
+  const perfilesPermitidos = new Set([
+    'SOPORTE_TECNICO',
+    'POSTVENTA',
+    'OPERACIONES',
+    'GERENCIA',
+    'ATENCION_CLIENTE',
+  ]);
 
-  return 'ATENCION_CLIENTE';
+  if (!perfilesPermitidos.has(area)) {
+    throw new Error(`Área de derivación sin perfil configurado: ${area}`);
+  }
+
+  return area;
 }
 
 function crearCodigoReclamo() {
@@ -208,7 +252,7 @@ function crearCodigoReclamo() {
   const dd = String(fecha.getDate()).padStart(2, '0');
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
 
-  return `VTR-${yyyy}${mm}${dd}-${random}`;
+  return `REC-${yyyy}${mm}${dd}-${random}`;
 }
 
 function resolverNombreCliente(comentario) {
@@ -216,14 +260,18 @@ function resolverNombreCliente(comentario) {
     .replace(/^@+/, '')
     .trim();
 
-  if (usuario) return usuario.slice(0, 255);
+  if (!usuario) {
+    throw new Error(`Comentario ${comentario.comentario_negativo_id} no trae usuario_comentario para nombre_cliente.`);
+  }
 
-  const canal = resolverCanal(comentario.plataforma);
-  return `Usuario ${canal}`;
+  return usuario.slice(0, 255);
 }
 
 async function buscarUsuarioDisponiblePorPerfil(cliente, perfilDestino) {
-  if (!perfilDestino) return null;
+  exigirValor(perfilDestino, 'No se recibió perfilDestino para asignación.');
+
+  await obtenerIdPorNombre(cliente, 'perfiles', perfilDestino);
+  await obtenerIdPorNombre(cliente, 'roles', 'TRABAJADOR');
 
   const resultado = await cliente.query(
     `
@@ -283,13 +331,13 @@ async function crearReclamoGeneralDesdeCaso({ comentario, analisis, catalogo, ca
     const catalogos = await obtenerCatalogosBase(cliente);
 
     const nombreCanal = resolverCanal(comentario.plataforma);
-    const canalId = catalogos.canales[nombreCanal] || catalogos.canales.OTRO;
+    const canalId = exigirIdCatalogo(catalogos.canales, nombreCanal, 'canal');
 
     const categoriaGeneral = resolverCategoriaGeneral(catalogo.tipo_incidencia);
-    const categoriaId = catalogos.categorias[categoriaGeneral] || catalogos.categorias.OTRO;
+    const categoriaId = exigirIdCatalogo(catalogos.categorias, categoriaGeneral, 'categoría');
 
     const prioridadNombre = normalizarNombreCatalogo(catalogo.prioridad);
-    const prioridadId = catalogos.prioridades[prioridadNombre] || catalogos.prioridades.MEDIA;
+    const prioridadId = exigirIdCatalogo(catalogos.prioridades, prioridadNombre, 'prioridad');
 
     const perfilAsignacion = resolverPerfilAsignacion(catalogo.area_derivacion);
 
@@ -303,15 +351,30 @@ async function crearReclamoGeneralDesdeCaso({ comentario, analisis, catalogo, ca
       estadoObjetivo = 'ASIGNADO_HUMANO';
     }
 
-    const estadoId = catalogos.estados[estadoObjetivo] || catalogos.estados.RECIBIDO;
+    const estadoId = exigirIdCatalogo(catalogos.estados, estadoObjetivo, 'estado');
     const codigoReclamo = crearCodigoReclamo();
     const nombreCliente = resolverNombreCliente(comentario);
 
+    const fechaComentario = normalizarFechaComentarioSql(
+      comentario.fecha_comentario,
+      `Comentario ${comentario.comentario_negativo_id} no trae fecha_comentario.`
+    );
+
     const asunto = `[${catalogo.tipo_incidencia}] ${normalizarTexto(comentario.texto_comentario).slice(0, 180)}`;
+
+    const comentarioNormalizado = {
+      ...comentario,
+      fecha_comentario: fechaComentario,
+    };
 
     const payloadNormalizado = {
       caso_derivacion_id: caso.id,
+      comentario_negativo_id: comentario.comentario_negativo_id,
       usuario_comentario: caso.usuario_comentario,
+      plataforma: comentario.plataforma,
+      tipo_publicacion: comentario.tipo_publicacion,
+      url_publicacion: comentario.url_publicacion,
+      fecha_comentario: fechaComentario,
       tipo_incidencia: catalogo.tipo_incidencia,
       area_derivacion: catalogo.area_derivacion,
       prioridad: catalogo.prioridad,
@@ -348,7 +411,7 @@ async function crearReclamoGeneralDesdeCaso({ comentario, analisis, catalogo, ca
         nombreCliente,
         asunto,
         comentario.texto_comentario,
-        JSON.stringify(comentario),
+        JSON.stringify(comentarioNormalizado),
         JSON.stringify(payloadNormalizado),
         estadoObjetivo,
       ]
@@ -481,4 +544,9 @@ async function crearReclamoGeneralDesdeCaso({ comentario, analisis, catalogo, ca
 
 module.exports = {
   crearReclamoGeneralDesdeCaso,
+  resolverCanal,
+  resolverCategoriaGeneral,
+  resolverPerfilAsignacion,
+  crearCodigoReclamo,
+  normalizarFechaComentarioSql,
 };

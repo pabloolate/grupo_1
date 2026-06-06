@@ -16,7 +16,8 @@ async function registrarComentariosNuevosEnControl({ limite = 50 } = {}) {
         LEFT JOIN derivador_control_comentarios d
           ON d.hash_comentario = c.hash_comentario
         WHERE d.id IS NULL
-        ORDER BY c.fecha_scraping ASC, c.id ASC
+          AND c.fecha_comentario IS NOT NULL
+        ORDER BY c.fecha_comentario ASC, c.id ASC
         LIMIT $1
       ),
       insertados AS (
@@ -82,14 +83,13 @@ async function obtenerComentariosPendientes({ limite = 10 } = {}) {
       c.texto_comentario,
       c.sentimiento,
       c.puntaje,
-      c.likes,
-      c.replies,
+      TO_CHAR(c.fecha_comentario, 'YYYY-MM-DD') AS fecha_comentario,
       c.fecha_scraping
     FROM derivador_control_comentarios d
     JOIN comentarios_negativos c
       ON c.id = d.comentario_negativo_id
     WHERE d.estado_derivacion = 'PENDIENTE'
-    ORDER BY c.fecha_scraping ASC, c.id ASC
+    ORDER BY c.fecha_comentario ASC, c.id ASC
     LIMIT $1;
     `,
     [limite]

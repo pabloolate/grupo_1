@@ -28,6 +28,29 @@ public class CasosDerivacionController {
         return casosDerivacionService.listarCasos(estado, area, prioridad, tipo, usuario);
     }
 
+    @GetMapping("/filtro-fechas")
+    public List<CasoDerivacionFiltroFechaResponse> listarPorFiltroFechas(
+            @RequestParam(required = false) String estadoTiempo,
+            @RequestParam(required = false) String desde,
+            @RequestParam(required = false) String hasta,
+            @RequestParam(required = false) String plataforma,
+            @RequestParam(required = false) String area,
+            @RequestParam(required = false) String prioridad,
+            @RequestParam(required = false) String tipo,
+            @RequestParam(required = false) String usuario
+    ) {
+        return casosDerivacionService.listarCasosPorFiltroFechas(
+                estadoTiempo,
+                desde,
+                hasta,
+                plataforma,
+                area,
+                prioridad,
+                tipo,
+                usuario
+        );
+    }
+
     @GetMapping("/{id}")
     public CasoDerivacionDetalleResponse obtenerDetalle(@PathVariable Long id) {
         return casosDerivacionService.obtenerDetalle(id);

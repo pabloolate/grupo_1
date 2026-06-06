@@ -46,15 +46,6 @@ async function inicializarBd() {
       url_origen TEXT NULL,
       url_publicacion TEXT NOT NULL,
       hash_publicacion CHAR(64) NOT NULL UNIQUE,
-      texto_publicacion TEXT NULL,
-      fecha_publicacion DATE NULL,
-      hora_publicacion VARCHAR(10) NULL,
-      likes INTEGER NULL DEFAULT 0,
-      views INTEGER NULL DEFAULT 0,
-      cantidad_comentarios_detectados INTEGER NOT NULL DEFAULT 0,
-      cantidad_comentarios_negativos INTEGER NOT NULL DEFAULT 0,
-      ruta_imagen_local TEXT NULL,
-      url_imagen_original TEXT NULL,
       fecha_scraping TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -62,13 +53,16 @@ async function inicializarBd() {
   `);
 
   await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_publicaciones_plataforma_fecha
-      ON publicaciones_negativas (plataforma, fecha_scraping);
-  `);
-
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_publicaciones_tipo_fecha
-      ON publicaciones_negativas (tipo_publicacion, fecha_scraping);
+    ALTER TABLE publicaciones_negativas
+      DROP COLUMN IF EXISTS texto_publicacion,
+      DROP COLUMN IF EXISTS fecha_publicacion,
+      DROP COLUMN IF EXISTS hora_publicacion,
+      DROP COLUMN IF EXISTS likes,
+      DROP COLUMN IF EXISTS views,
+      DROP COLUMN IF EXISTS cantidad_comentarios_detectados,
+      DROP COLUMN IF EXISTS cantidad_comentarios_negativos,
+      DROP COLUMN IF EXISTS ruta_imagen_local,
+      DROP COLUMN IF EXISTS url_imagen_original;
   `);
 
   await db.query(`
@@ -78,17 +72,32 @@ async function inicializarBd() {
       plataforma VARCHAR(40) NOT NULL,
       tipo_publicacion VARCHAR(40) NOT NULL,
       url_publicacion TEXT NOT NULL,
+      usuario_comentario VARCHAR(255) NULL,
       hash_comentario CHAR(64) NOT NULL UNIQUE,
       texto_comentario TEXT NOT NULL,
       sentimiento VARCHAR(40) NOT NULL DEFAULT 'negativo',
       puntaje INTEGER NOT NULL DEFAULT 1,
-      likes INTEGER NOT NULL DEFAULT 0,
-      replies INTEGER NOT NULL DEFAULT 0,
       fecha_scraping TIMESTAMPTZ NOT NULL,
+      fecha_comentario DATE NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await db.query(`
+    ALTER TABLE comentarios_negativos
+      ADD COLUMN IF NOT EXISTS usuario_comentario VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS fecha_comentario DATE NULL,
+      DROP COLUMN IF EXISTS likes,
+      DROP COLUMN IF EXISTS replies,
+      DROP COLUMN IF EXISTS fecha_comentario_raw,
+      DROP COLUMN IF EXISTS hora_comentario;
+  `);
+
+  await db.query(`DROP INDEX IF EXISTS idx_publicaciones_plataforma_fecha;`);
+  await db.query(`DROP INDEX IF EXISTS idx_publicaciones_tipo_fecha;`);
+  await db.query(`DROP INDEX IF EXISTS idx_comentarios_plataforma_fecha;`);
+  await db.query(`DROP INDEX IF EXISTS idx_comentarios_tipo_fecha;`);
 
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_comentarios_publicacion
@@ -96,8 +105,18 @@ async function inicializarBd() {
   `);
 
   await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_comentarios_plataforma_fecha
-      ON comentarios_negativos (plataforma, fecha_scraping);
+    CREATE INDEX IF NOT EXISTS idx_comentarios_usuario
+      ON comentarios_negativos (usuario_comentario);
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_comentarios_fecha_comentario
+      ON comentarios_negativos (fecha_comentario);
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_comentarios_plataforma_fecha_comentario
+      ON comentarios_negativos (plataforma, fecha_comentario);
   `);
 }
 

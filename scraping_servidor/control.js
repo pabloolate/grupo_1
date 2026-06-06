@@ -46,11 +46,27 @@ function normalizarComentarioDom(item, index) {
     ''
   );
 
+  const fechaComentario = normalizarTexto(
+    item[`fecha_comentario_${id}`] ||
+    item.fecha_comentario ||
+    item.fechaComentario ||
+    ''
+  );
+
+  const fechaComentarioRaw = normalizarTexto(
+    item[`fecha_comentario_raw_${id}`] ||
+    item.fecha_comentario_raw ||
+    item.fechaComentarioRaw ||
+    ''
+  );
+
   return {
     [`comentario_${id}`]: texto,
     [`usuario_comentario_${id}`]: usuarioComentario || null,
     [`likes_${id}`]: Number(item[`likes_${id}`] ?? item.likes ?? 0) || 0,
     [`replies_${id}`]: Number(item[`replies_${id}`] ?? item.replies ?? item.respuestas ?? 0) || 0,
+    [`fecha_comentario_${id}`]: fechaComentario || null,
+    [`fecha_comentario_raw_${id}`]: fechaComentarioRaw || null,
   };
 }
 

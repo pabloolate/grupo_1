@@ -19,23 +19,9 @@ const TIPOS_INCIDENCIA_PERMITIDOS = new Set([
   'NO_CLASIFICADO',
 ]);
 
-const MAPA_CATEGORIA_ANTIGUA_A_TIPO = {
-  INTERNET: 'SIN_SERVICIO_INTERNET',
-  TELEVISION: 'PROBLEMA_TV_CABLE',
-  TELEFONIA: 'PROBLEMA_TELEFONIA',
-  FACTURACION: 'PROBLEMA_FACTURACION',
-  CORTE_SERVICIO: 'CORTE_SERVICIO',
-  MALA_ATENCION: 'MALA_ATENCION',
-  SOPORTE_DIGITAL: 'SOPORTE_DIGITAL',
-  BAJA_SERVICIO: 'BAJA_SERVICIO',
-  INSTALACION: 'INSTALACION_PENDIENTE',
-  POSTVENTA: 'PROBLEMA_FACTURACION',
-  OTRO: 'RECLAMO_GENERAL',
-};
-
-function normalizarTextoEnum(valor, defecto) {
+function normalizarTextoEnum(valor) {
   if (valor === undefined || valor === null || valor === '') {
-    return defecto;
+    return '';
   }
 
   return String(valor)
@@ -47,56 +33,60 @@ function normalizarTextoEnum(valor, defecto) {
     .replace(/^_+|_+$/g, '');
 }
 
-function limitarTexto(valor, maximo, defecto = '') {
-  const texto = String(valor || defecto).trim();
+function limitarTexto(valor, maximo) {
+  const texto = String(valor || '').trim();
+
+  if (!texto) {
+    throw new Error('La respuesta IA no trae motivo_decision válido.');
+  }
+
   return texto.length <= maximo ? texto : texto.slice(0, maximo);
 }
 
-function normalizarBooleano(valor, defecto = true) {
-  if (typeof valor === 'boolean') return valor;
-  if (valor === undefined || valor === null || valor === '') return defecto;
+function exigirBooleano(valor, nombreCampo) {
+  if (typeof valor !== 'boolean') {
+    throw new Error(`La respuesta IA debe traer ${nombreCampo} como booleano.`);
+  }
 
-  return ['true', '1', 'si', 'sí', 'yes'].includes(String(valor).trim().toLowerCase());
+  return valor;
 }
 
 function normalizarConfianza(valor) {
   const numero = Number(valor);
 
-  if (!Number.isFinite(numero)) return 0.5;
-  if (numero < 0) return 0;
-  if (numero > 1) return 1;
+  if (!Number.isFinite(numero) || numero < 0 || numero > 1) {
+    throw new Error('La respuesta IA debe traer confianza numérica entre 0 y 1.');
+  }
 
   return numero;
 }
 
 function resolverTipoIncidencia(analisisOriginal = {}) {
-  const tipoDirecto = normalizarTextoEnum(analisisOriginal.tipo_incidencia, '');
+  const tipoIncidencia = normalizarTextoEnum(analisisOriginal.tipo_incidencia);
 
-  if (TIPOS_INCIDENCIA_PERMITIDOS.has(tipoDirecto)) {
-    return tipoDirecto;
+  if (!tipoIncidencia) {
+    throw new Error('La respuesta IA no trae tipo_incidencia.');
   }
 
-  const categoriaAntigua = normalizarTextoEnum(analisisOriginal.categoria, '');
-
-  if (MAPA_CATEGORIA_ANTIGUA_A_TIPO[categoriaAntigua]) {
-    return MAPA_CATEGORIA_ANTIGUA_A_TIPO[categoriaAntigua];
+  if (!TIPOS_INCIDENCIA_PERMITIDOS.has(tipoIncidencia)) {
+    throw new Error(`tipo_incidencia no permitido por catálogo fijo: ${tipoIncidencia}`);
   }
 
-  return 'NO_CLASIFICADO';
+  return tipoIncidencia;
 }
 
 function normalizarAnalisisIa(analisisOriginal = {}) {
-  const esReclamoValido = normalizarBooleano(analisisOriginal.es_reclamo_valido, true);
-  const tipoIncidencia = esReclamoValido ? resolverTipoIncidencia(analisisOriginal) : 'NO_CLASIFICADO';
+  const esReclamoValido = exigirBooleano(analisisOriginal.es_reclamo_valido, 'es_reclamo_valido');
+  const tipoIncidencia = resolverTipoIncidencia(analisisOriginal);
+
+  if (!esReclamoValido && tipoIncidencia !== 'NO_CLASIFICADO') {
+    throw new Error('Si es_reclamo_valido=false, tipo_incidencia debe ser NO_CLASIFICADO.');
+  }
 
   return {
     es_reclamo_valido: esReclamoValido,
     tipo_incidencia: tipoIncidencia,
-    motivo_decision: limitarTexto(
-      analisisOriginal.motivo_decision || analisisOriginal.resumen,
-      2000,
-      'Clasificación generada por el motor de derivación.'
-    ),
+    motivo_decision: limitarTexto(analisisOriginal.motivo_decision, 2000),
     confianza: normalizarConfianza(analisisOriginal.confianza),
     json_respuesta_ia: analisisOriginal,
   };

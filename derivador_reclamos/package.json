@@ -1,7 +1,7 @@
 {
   "name": "derivador_reclamos",
   "version": "1.0.0",
-  "description": "Servicio Node.js para derivar reclamos negativos desde scraping hacia la mesa de ayuda VTR.",
+  "description": "Servicio Node.js para clasificar, agrupar y derivar reclamos negativos desde comentarios de canales digitales.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
@@ -11,9 +11,10 @@
   "keywords": [
     "derivador",
     "reclamos",
-    "vtr",
     "ollama",
-    "postgresql"
+    "postgresql",
+    "comentarios",
+    "canales-digitales"
   ],
   "author": "Pablo Olate Carreño",
   "license": "MIT",

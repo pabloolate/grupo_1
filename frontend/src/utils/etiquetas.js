@@ -63,15 +63,12 @@ export function codigoCaso(caso) {
   const codigoReclamo = caso?.codigoReclamo || caso?.codigo_reclamo;
   if (codigoReclamo) return codigoReclamo;
 
-  const reclamoId = caso?.reclamoIdGenerado || caso?.reclamo_id_generado;
-  if (reclamoId) return `RECLAMO-${reclamoId}`;
-
   const id = caso?.id;
   if (id !== undefined && id !== null && id !== '') {
-    return `CD-${String(id).padStart(5, '0')}`;
+    return `Código no recibido para caso ${id}`;
   }
 
-  return 'Sin código';
+  return 'Código no recibido';
 }
 
 export function normalizarUrlEvidencia(urlOriginal) {
@@ -84,16 +81,16 @@ export function normalizarUrlEvidencia(urlOriginal) {
 
   const matchPost = limpiar.match(/^p\/([^/?#]+)/i);
   if (matchPost?.[1]) {
-    return `https://www.instagram.com/vtrchile/p/${matchPost[1]}`;
+    return `https://www.instagram.com/p/${matchPost[1]}`;
   }
 
   const matchReel = limpiar.match(/^reel\/([^/?#]+)/i);
   if (matchReel?.[1]) {
-    return `https://www.instagram.com/vtrchile/reel/${matchReel[1]}`;
+    return `https://www.instagram.com/reel/${matchReel[1]}`;
   }
 
   if (/^p\/|^reel\//i.test(limpiar)) {
-    return `https://www.instagram.com/vtrchile/${limpiar}`;
+    return `https://www.instagram.com/${limpiar}`;
   }
 
   if (/^https?:\/\//i.test(url)) return url;

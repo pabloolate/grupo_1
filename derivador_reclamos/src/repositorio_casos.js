@@ -11,13 +11,67 @@ function normalizarUsuarioCaso(comentario) {
     .replace(/\/+$/, '')
     .trim();
 
-  if (usuario) return usuario.slice(0, 255);
+  if (!usuario) {
+    throw new Error(`Comentario ${comentario.comentario_negativo_id} no trae usuario_comentario.`);
+  }
 
-  return `sin_usuario_${comentario.comentario_negativo_id}`;
+  return usuario.slice(0, 255);
+}
+
+function normalizarFechaComentarioSql(valor, mensaje) {
+  if (valor === undefined || valor === null || valor === '') {
+    throw new Error(mensaje);
+  }
+
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) {
+      throw new Error(`${mensaje} Fecha inválida.`);
+    }
+
+    const yyyy = valor.getFullYear();
+    const mm = String(valor.getMonth() + 1).padStart(2, '0');
+    const dd = String(valor.getDate()).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const texto = String(valor).trim();
+
+  const matchSql = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (matchSql) {
+    return texto;
+  }
+
+  const matchFlexible = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (matchFlexible) {
+    const yyyy = matchFlexible[1];
+    const mm = String(matchFlexible[2]).padStart(2, '0');
+    const dd = String(matchFlexible[3]).padStart(2, '0');
+
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const matchIso = texto.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+  if (matchIso) {
+    return `${matchIso[1]}-${matchIso[2]}-${matchIso[3]}`;
+  }
+
+  throw new Error(`${mensaje} Formato recibido inválido: ${texto}`);
+}
+
+function obtenerFechaComentarioObligatoria(comentario) {
+  return normalizarFechaComentarioSql(
+    comentario.fecha_comentario,
+    `Comentario ${comentario.comentario_negativo_id} no trae fecha_comentario.`
+  );
 }
 
 async function obtenerCatalogoTipoIncidencia(tipoIncidencia) {
   const tipo = normalizarTexto(tipoIncidencia).toUpperCase();
+
+  if (!tipo) {
+    throw new Error('No se recibió tipo_incidencia para consultar catálogo.');
+  }
 
   const resultado = await poolScraping.query(
     `
@@ -34,29 +88,11 @@ async function obtenerCatalogoTipoIncidencia(tipoIncidencia) {
     [tipo]
   );
 
-  if (resultado.rowCount > 0) {
-    return resultado.rows[0];
+  if (resultado.rowCount === 0) {
+    throw new Error(`No existe tipo_incidencia activo en catalogo_tipos_incidencia: ${tipo}`);
   }
 
-  const fallback = await poolScraping.query(
-    `
-    SELECT
-      tipo_incidencia,
-      area_derivacion,
-      prioridad,
-      descripcion
-    FROM catalogo_tipos_incidencia
-    WHERE tipo_incidencia = 'NO_CLASIFICADO'
-      AND activo = true
-    LIMIT 1;
-    `
-  );
-
-  if (fallback.rowCount === 0) {
-    throw new Error('No existe NO_CLASIFICADO activo en catalogo_tipos_incidencia.');
-  }
-
-  return fallback.rows[0];
+  return resultado.rows[0];
 }
 
 async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }) {
@@ -66,7 +102,7 @@ async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }
   const tipoIncidencia = catalogo.tipo_incidencia;
   const areaDerivacion = catalogo.area_derivacion;
   const prioridad = catalogo.prioridad;
-  const fechaEvento = comentario.fecha_scraping || new Date();
+  const fechaEvento = obtenerFechaComentarioObligatoria(comentario);
 
   try {
     await cliente.query('BEGIN');
@@ -93,9 +129,9 @@ async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }
         UPDATE casos_derivacion
         SET cantidad_eventos = cantidad_eventos + 1,
             ultimo_comentario_id = $2,
-            fecha_ultimo_evento = $3,
-            motivo_decision = COALESCE($4, motivo_decision),
-            confianza = COALESCE($5, confianza),
+            fecha_ultimo_evento = $3::date,
+            motivo_decision = $4,
+            confianza = $5,
             updated_at = NOW()
         WHERE id = $1
         RETURNING *;
@@ -104,7 +140,7 @@ async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }
           caso.id,
           comentario.comentario_negativo_id,
           fechaEvento,
-          analisis.motivo_decision || null,
+          analisis.motivo_decision,
           analisis.confianza,
         ]
       );
@@ -154,8 +190,8 @@ async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }
         1,
         $5,
         $5,
-        $6,
-        $6,
+        $6::date,
+        $6::date,
         $7,
         $8,
         NOW(),
@@ -170,7 +206,7 @@ async function crearOActualizarCasoDerivacion({ comentario, analisis, catalogo }
         prioridad,
         comentario.comentario_negativo_id,
         fechaEvento,
-        analisis.motivo_decision || null,
+        analisis.motivo_decision,
         analisis.confianza,
       ]
     );
@@ -223,10 +259,10 @@ async function actualizarCasoConReclamoGenerado({
     `,
     [
       casoDerivacionId,
-      reclamoEntranteId || null,
-      reclamoId || null,
-      clasificacionId || null,
-      usuarioAsignadoId || null,
+      reclamoEntranteId,
+      reclamoId,
+      clasificacionId,
+      usuarioAsignadoId,
     ]
   );
 }
@@ -236,4 +272,6 @@ module.exports = {
   crearOActualizarCasoDerivacion,
   actualizarCasoConReclamoGenerado,
   normalizarUsuarioCaso,
+  obtenerFechaComentarioObligatoria,
+  normalizarFechaComentarioSql,
 };

@@ -2,27 +2,57 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorBox from '../components/ui/ErrorBox.jsx';
 import Loading from '../components/ui/Loading.jsx';
-import EstadoBadge from '../components/reclamos/EstadoBadge.jsx';
 import PrioridadBadge from '../components/reclamos/PrioridadBadge.jsx';
-import { formatearFecha } from '../utils/fechas.js';
+import { formatearFechaDia } from '../utils/fechas.js';
 import { leerCampo } from '../utils/campos.js';
 import { codigoCaso, humanizarEnum, normalizarUrlEvidencia } from '../utils/etiquetas.js';
 import {
-  cambiarEstadoCasoDerivacion,
   obtenerCasoDerivacion,
   obtenerComentariosCasoDerivacion,
 } from '../services/casosDerivacionService.js';
 
-const ESTADOS_REVISION = [
-  { valor: 'ABIERTO', etiqueta: 'Pendiente' },
-  { valor: 'DERIVADO', etiqueta: 'Derivado' },
-  { valor: 'EN_GESTION', etiqueta: 'En revisión' },
-  { valor: 'CERRADO', etiqueta: 'Revisado' },
-  { valor: 'DESCARTADO', etiqueta: 'Descartado' },
-];
+function leer(obj, nombres, valorPorDefecto = '') {
+  return leerCampo(obj, nombres, valorPorDefecto);
+}
 
-function leer(obj, nombres, fallback = '') {
-  return leerCampo(obj, nombres, fallback);
+function leerObligatorio(obj, nombres, etiqueta) {
+  const valor = leerCampo(obj, nombres, '');
+  if (valor === undefined || valor === null || valor === '') {
+    return `${etiqueta} no recibido`;
+  }
+
+  return valor;
+}
+
+function formatearConfianza(valor) {
+  if (valor === undefined || valor === null || valor === '') return 'Confianza no recibida';
+
+  const numero = Number(valor);
+  if (Number.isNaN(numero)) return String(valor);
+
+  if (numero <= 1) return `${Math.round(numero * 100)}%`;
+  return `${Math.round(numero)}%`;
+}
+
+function normalizarRespuestaDetalle(respuestaDetalle, respuestaComentarios) {
+  const casoReal = respuestaDetalle?.caso || respuestaDetalle;
+
+  const comentariosDesdeDetalle = Array.isArray(respuestaDetalle?.comentarios)
+    ? respuestaDetalle.comentarios
+    : [];
+
+  const comentariosDesdeEndpoint = Array.isArray(respuestaComentarios)
+    ? respuestaComentarios
+    : [];
+
+  const comentarios = comentariosDesdeEndpoint.length > 0
+    ? comentariosDesdeEndpoint
+    : comentariosDesdeDetalle;
+
+  return {
+    caso: casoReal || null,
+    comentarios,
+  };
 }
 
 export default function CasoDerivacionDetalle() {
@@ -30,9 +60,7 @@ export default function CasoDerivacionDetalle() {
   const usuarioDecodificado = decodeURIComponent(usuario || '');
   const [caso, setCaso] = useState(null);
   const [comentarios, setComentarios] = useState([]);
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState('ABIERTO');
   const [cargando, setCargando] = useState(true);
-  const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
 
   const rutaVolver = usuarioDecodificado ? `/reclamos/${encodeURIComponent(usuarioDecodificado)}` : '/reclamos';
@@ -43,13 +71,15 @@ export default function CasoDerivacionDetalle() {
     setError(null);
 
     try {
-      const [casoData, comentariosData] = await Promise.all([
+      const [respuestaDetalle, respuestaComentarios] = await Promise.all([
         obtenerCasoDerivacion(id),
-        obtenerComentariosCasoDerivacion(id).catch(() => []),
+        obtenerComentariosCasoDerivacion(id),
       ]);
-      setCaso(casoData);
-      setComentarios(Array.isArray(comentariosData) ? comentariosData : []);
-      setEstadoSeleccionado(leer(casoData, ['estadoCaso', 'estado_caso'], 'ABIERTO'));
+
+      const detalleNormalizado = normalizarRespuestaDetalle(respuestaDetalle, respuestaComentarios);
+
+      setCaso(detalleNormalizado.caso);
+      setComentarios(detalleNormalizado.comentarios);
     } catch (err) {
       setError(err);
     } finally {
@@ -60,20 +90,6 @@ export default function CasoDerivacionDetalle() {
   useEffect(() => {
     cargar();
   }, [id]);
-
-  async function cambiarEstado(nuevoEstado = estadoSeleccionado) {
-    setGuardando(true);
-    setError(null);
-
-    try {
-      await cambiarEstadoCasoDerivacion(id, nuevoEstado);
-      await cargar();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setGuardando(false);
-    }
-  }
 
   const linksEvidencia = useMemo(() => {
     const urls = new Set();
@@ -95,10 +111,16 @@ export default function CasoDerivacionDetalle() {
     );
   }
 
-  const usuarioCaso = leer(caso, ['usuarioComentario', 'usuario_comentario'], usuarioDecodificado || 'sin_usuario');
-  const tipoIncidencia = leer(caso, ['tipoIncidencia', 'tipo_incidencia']);
-  const areaDerivacion = leer(caso, ['areaDerivacion', 'area_derivacion']);
-  const estadoActual = leer(caso, ['estadoCaso', 'estado_caso']);
+  const codigo = codigoCaso(caso);
+  const usuarioCaso = leerObligatorio(caso, ['usuarioComentario', 'usuario_comentario'], 'Usuario');
+  const tipoIncidencia = leerObligatorio(caso, ['tipoIncidencia', 'tipo_incidencia'], 'Tipo');
+  const areaDerivacion = leerObligatorio(caso, ['areaDerivacion', 'area_derivacion'], 'Área');
+  const prioridad = leerObligatorio(caso, ['prioridad'], 'Prioridad');
+  const cantidadEventos = leerObligatorio(caso, ['cantidadEventos', 'cantidad_eventos'], 'Eventos');
+  const confianza = leer(caso, ['confianza'], '');
+  const motivoDecision = leerObligatorio(caso, ['motivoDecision', 'motivo_decision'], 'Motivo');
+  const primerEvento = leerObligatorio(caso, ['fechaPrimerEvento', 'fecha_primer_evento'], 'Primer evento');
+  const ultimoEvento = leerObligatorio(caso, ['fechaUltimoEvento', 'fecha_ultimo_evento'], 'Último evento');
 
   return (
     <div className="page page-compact">
@@ -106,7 +128,7 @@ export default function CasoDerivacionDetalle() {
 
       <div className="page-header">
         <div>
-          <h2>{codigoCaso(caso)}</h2>
+          <h2>{codigo}</h2>
           <p>{usuarioCaso} · {humanizarEnum(tipoIncidencia)} · Área destino: {humanizarEnum(areaDerivacion)}</p>
         </div>
         <div className="header-actions">
@@ -120,50 +142,41 @@ export default function CasoDerivacionDetalle() {
         <section className="panel compact-panel">
           <h3>Resumen del reclamo detectado</h3>
           <div className="detail-list compact-detail-list">
-            <span>Código</span><strong>{codigoCaso(caso)}</strong>
+            <span>Código</span><strong>{codigo}</strong>
             <span>Usuario reclamante</span><strong>{usuarioCaso}</strong>
             <span>Tipo detectado</span><strong>{humanizarEnum(tipoIncidencia)}</strong>
             <span>Área destino</span><strong>{humanizarEnum(areaDerivacion)}</strong>
-            <span>Prioridad</span><strong><PrioridadBadge prioridad={leer(caso, ['prioridad'])} /></strong>
-            <span>Estado de revisión</span><strong><EstadoBadge estado={estadoActual} /></strong>
-            <span>Eventos asociados</span><strong>{leer(caso, ['cantidadEventos', 'cantidad_eventos'], 0)}</strong>
-            <span>Confianza</span><strong>{leer(caso, ['confianza'], 'Sin dato')}</strong>
-            <span>Primer evento</span><strong>{formatearFecha(leer(caso, ['fechaPrimerEvento', 'fecha_primer_evento']))}</strong>
-            <span>Último evento</span><strong>{formatearFecha(leer(caso, ['fechaUltimoEvento', 'fecha_ultimo_evento']))}</strong>
+            <span>Prioridad</span><strong><PrioridadBadge prioridad={prioridad} /></strong>
+            <span>Eventos asociados</span><strong>{cantidadEventos}</strong>            
           </div>
 
           <h4>Motivo de clasificación</h4>
-          <p>{leer(caso, ['motivoDecision', 'motivo_decision'], 'Sin motivo registrado.')}</p>
+          <p>{motivoDecision}</p>
         </section>
 
         <section className="panel compact-panel form-panel">
-          <h3>Derivación sugerida</h3>
+          <h3>Derivación generada</h3>
           <div className="derivation-box">
             <span>Área responsable</span>
             <strong>{humanizarEnum(areaDerivacion)}</strong>
-            <small>Este sistema no reemplaza el flujo formal: deja evidencia agrupada y área sugerida para que el área correspondiente revise el caso.</small>
+            <small>El sistema centraliza el reclamo, conserva la evidencia y deja la derivación generada para el área responsable.</small>
           </div>
 
-          <label>Estado de revisión</label>
-          <select value={estadoSeleccionado} onChange={(e) => setEstadoSeleccionado(e.target.value)}>
-            {ESTADOS_REVISION.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.etiqueta}</option>)}
-          </select>
-          <button className="btn btn-primary" disabled={guardando} onClick={() => cambiarEstado()}>Actualizar revisión</button>
-
-          <div className="quick-actions">
-            <button className="btn btn-secondary" disabled={guardando} onClick={() => cambiarEstado('CERRADO')}>Marcar revisado</button>
-            <button className="btn btn-secondary" disabled={guardando} onClick={() => cambiarEstado('DESCARTADO')}>Descartar</button>
+          <div className="derivation-box derivation-box-secondary">
+            <span>Clasificación</span>
+            <strong>{humanizarEnum(tipoIncidencia)}</strong>
+            <small>Prioridad: {humanizarEnum(prioridad)} · Eventos asociados: {cantidadEventos}</small>
           </div>
 
-          <h4>Links de evidencia</h4>
-          <div className="evidence-link-grid">
-            {linksEvidencia.length ? linksEvidencia.slice(0, 12).map((url, index) => (
-              <a key={url} className="btn btn-evidence" href={url} target="_blank" rel="noreferrer">
-                Evidencia {index + 1}
-              </a>
-            )) : <p>Sin links asociados.</p>}
-            {linksEvidencia.length > 12 && <small>{linksEvidencia.length - 12} links adicionales en las evidencias.</small>}
-          </div>
+          {linksEvidencia.length > 0 && (
+            <div className="evidence-link-grid evidence-link-grid-clean">
+              {linksEvidencia.slice(0, 12).map((url, index) => (
+                <a key={url} className="btn btn-evidence" href={url} target="_blank" rel="noreferrer">
+                  Evidencia {index + 1}
+                </a>
+              ))}
+            </div>
+          )}
         </section>
       </div>
 
@@ -175,14 +188,12 @@ export default function CasoDerivacionDetalle() {
             return (
               <article className="evidence-card" key={leer(comentario, ['comentarioNegativoId', 'comentario_negativo_id', 'id'])}>
                 <div className="evidence-head">
-                  <strong>{leer(comentario, ['usuarioComentario', 'usuario_comentario'], usuarioCaso)}</strong>
-                  <span>{humanizarEnum(leer(comentario, ['plataforma']))} · {humanizarEnum(leer(comentario, ['tipoPublicacion', 'tipo_publicacion']))}</span>
+                  <strong>{leerObligatorio(comentario, ['usuarioComentario', 'usuario_comentario'], 'Usuario')}</strong>
+                  <span>{humanizarEnum(leerObligatorio(comentario, ['plataforma'], 'Plataforma'))} · {humanizarEnum(leerObligatorio(comentario, ['tipoPublicacion', 'tipo_publicacion'], 'Tipo publicación'))}</span>
                 </div>
-                <p>{leer(comentario, ['textoComentario', 'texto_comentario'])}</p>
+                <p>{leerObligatorio(comentario, ['textoComentario', 'texto_comentario'], 'Texto')}</p>
                 <div className="evidence-meta">
-                  <span>Likes: {leer(comentario, ['likes'], 0)}</span>
-                  <span>Respuestas: {leer(comentario, ['replies'], 0)}</span>
-                  <span>{formatearFecha(leer(comentario, ['fechaScraping', 'fecha_scraping']))}</span>
+                  <span>Fecha comentario: {formatearFechaDia(leerObligatorio(comentario, ['fechaComentario', 'fecha_comentario'], 'Fecha comentario'))}</span>
                 </div>
                 {url && (
                   <a className="btn btn-evidence" href={url} target="_blank" rel="noreferrer">Abrir publicación</a>

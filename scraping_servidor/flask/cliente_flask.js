@@ -116,6 +116,25 @@ function extraerUsuarioComentario(comentario) {
   return usuarioNormalizado || null;
 }
 
+function extraerFechaComentario(comentario) {
+  if (!comentario || typeof comentario !== 'object') {
+    return null;
+  }
+
+  const indiceDinamico = obtenerIndiceComentarioDinamico(comentario);
+
+  const fecha = indiceDinamico
+    ? comentario[`fecha_comentario_${indiceDinamico}`]
+    : (
+        comentario.fecha_comentario ||
+        comentario.fechaComentario ||
+        null
+      );
+
+  const fechaNormalizada = normalizarTexto(fecha);
+  return fechaNormalizada || null;
+}
+
 function normalizarSentimiento(valor) {
   const texto = normalizarTexto(valor).toLowerCase();
 
@@ -164,6 +183,7 @@ function construirComentarioNegativoNormalizado({ comentarioOriginal, textoComen
     comentario: texto,
     texto_comentario: texto,
     usuario_comentario: usuarioComentario,
+    fecha_comentario: extraerFechaComentario(comentarioOriginal),
     sentimiento: 'Negativo',
     puntaje: comentarioOriginal?.puntaje ?? comentarioOriginal?.score ?? null,
     likes: extraerLikesComentario(comentarioOriginal),
@@ -256,5 +276,6 @@ module.exports = {
   construirComentariosParaFlask,
   extraerTextoComentario,
   extraerUsuarioComentario,
+  extraerFechaComentario,
   normalizarSentimiento,
 };

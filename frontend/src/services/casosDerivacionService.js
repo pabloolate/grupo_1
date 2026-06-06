@@ -41,3 +41,8 @@ export async function listarCatalogoTiposIncidencia() {
   const { data } = await reclamosApi.get('/casos-derivacion/catalogo-tipos');
   return extraerLista(data, ['tipos', 'catalogo']);
 }
+
+export async function listarCasosDerivacionPorFechas(params = {}) {
+  const { data } = await reclamosApi.get('/casos-derivacion/filtro-fechas', { params });
+  return extraerLista(data, ['casos', 'casosDerivacion', 'casos_derivacion', 'datos']);
+}

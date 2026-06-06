@@ -4,6 +4,7 @@ import Card from '../components/ui/Card.jsx';
 import Loading from '../components/ui/Loading.jsx';
 import ErrorBox from '../components/ui/ErrorBox.jsx';
 import { listarUsuariosReclamantes } from '../services/usuariosReclamantesService.js';
+import { listarCasosDerivacionPorFechas } from '../services/casosDerivacionService.js';
 import { obtenerResumenCasos } from '../services/reporteriaService.js';
 import { listarUsuarios } from '../services/authService.js';
 import { obtenerPerfil, obtenerRol, obtenerUsuario } from '../utils/auth.js';
@@ -18,6 +19,8 @@ import {
   tonoPerfil,
 } from '../utils/perfiles.js';
 import { etiquetaRol, puedeAdministrarUsuarios, puedeVerMetricas } from '../utils/roles.js';
+import EstadoTiempoBadge from '../components/reclamos/EstadoTiempoBadge.jsx';
+import { contarPorEstadoTiempo, contarPorPlataforma, filtrarCasosTemporales, leer as leerTiempo, leerNumero, ETIQUETAS_ESTADO_TIEMPO, ESTADOS_TIEMPO } from '../utils/tiempoReclamos.js';
 
 const ESTADOS_ABIERTOS = new Set(['ABIERTO', 'DERIVADO', 'EN_GESTION', 'ESCALADO']);
 const ESTADOS_CERRADOS = new Set(['CERRADO', 'DESCARTADO']);
@@ -77,8 +80,6 @@ function resumirLista(lista) {
   const totalUsuarios = lista.length;
   const totalCasos = lista.reduce((acc, fila) => acc + numero(fila, ['totalCasos', 'total_casos'], 0), 0);
   const totalEventos = lista.reduce((acc, fila) => acc + numero(fila, ['totalEventos', 'total_eventos'], 0), 0);
-  const pendientes = lista.reduce((acc, fila) => acc + numero(fila, ['casosAbiertos', 'casos_abiertos'], 0), 0);
-  const revisados = lista.reduce((acc, fila) => acc + numero(fila, ['casosCerrados', 'casos_cerrados'], 0), 0);
   const criticos = lista.filter((fila) => prioridadPeso(leer(fila, ['prioridadMaxima', 'prioridad_maxima'], '')) >= 4).length;
   const altas = lista.filter((fila) => prioridadPeso(leer(fila, ['prioridadMaxima', 'prioridad_maxima'], '')) >= 3).length;
 
@@ -86,8 +87,6 @@ function resumirLista(lista) {
     totalUsuarios,
     totalCasos,
     totalEventos,
-    pendientes,
-    revisados,
     criticos,
     altas,
   };
@@ -169,7 +168,7 @@ function AtencionRecomendada({ datos, titulo = 'Atención recomendada' }) {
       <div className="section-title-row">
         <div>
           <h3>{titulo}</h3>
-          <p>Usuarios con más urgencia según prioridad, eventos y casos pendientes.</p>
+          <p>Usuarios con más urgencia según prioridad, eventos y recurrencia.</p>
         </div>
         <Link className="btn btn-primary btn-small" to="/reclamos">Ir a reclamos</Link>
       </div>
@@ -194,7 +193,7 @@ function AtencionRecomendada({ datos, titulo = 'Atención recomendada' }) {
             </Link>
           );
         })}
-        {!filas.length && <div className="empty-box">No hay casos pendientes para esta vista.</div>}
+        {!filas.length && <div className="empty-box">No hay casos para esta vista.</div>}
       </div>
     </section>
   );
@@ -221,6 +220,60 @@ function RankingSimple({ titulo, subtitulo, datos, tipo }) {
   );
 }
 
+
+function PanelTiempoOperativo({ casos }) {
+  const [estadoTiempo, setEstadoTiempo] = useState('TODOS');
+  const conteoTiempo = useMemo(() => contarPorEstadoTiempo(casos), [casos]);
+  const conteoPlataforma = useMemo(() => contarPorPlataforma(casos), [casos]);
+  const casosFiltrados = useMemo(() => filtrarCasosTemporales(casos, { estadoTiempo, plataforma: 'todas', busqueda: '' }).slice(0, 8), [casos, estadoTiempo]);
+
+  return (
+    <section className="panel compact-panel temporal-dashboard-panel">
+      <div className="section-title-row">
+        <div>
+          <h3>Control por tiempo de atención</h3>
+          <p>Casos priorizados por días hábiles desde el primer comentario detectado.</p>
+        </div>
+        <Link className="btn btn-primary btn-small" to="/reclamos">Ver bandeja</Link>
+      </div>
+
+      <div className="temporal-summary-grid">
+        <button type="button" className={estadoTiempo === 'CRITICO' ? 'active' : ''} onClick={() => setEstadoTiempo('CRITICO')}><span>Críticos</span><strong>{formatearNumero(conteoTiempo.CRITICO)}</strong></button>
+        <button type="button" className={estadoTiempo === 'VENCIDO' ? 'active' : ''} onClick={() => setEstadoTiempo('VENCIDO')}><span>Vencidos</span><strong>{formatearNumero(conteoTiempo.VENCIDO)}</strong></button>
+        <button type="button" className={estadoTiempo === 'PROXIMO_A_VENCER' ? 'active' : ''} onClick={() => setEstadoTiempo('PROXIMO_A_VENCER')}><span>Próximos</span><strong>{formatearNumero(conteoTiempo.PROXIMO_A_VENCER)}</strong></button>
+        <button type="button" className={estadoTiempo === 'EN_PLAZO' ? 'active' : ''} onClick={() => setEstadoTiempo('EN_PLAZO')}><span>En plazo</span><strong>{formatearNumero(conteoTiempo.EN_PLAZO)}</strong></button>
+        <button type="button" className={estadoTiempo === 'NUEVO' ? 'active' : ''} onClick={() => setEstadoTiempo('NUEVO')}><span>Nuevos</span><strong>{formatearNumero(conteoTiempo.NUEVO)}</strong></button>
+      </div>
+
+      <div className="platform-summary-strip">
+        <div><span>Instagram</span><strong>{formatearNumero(conteoPlataforma.instagram)}</strong></div>
+        <div><span>TikTok</span><strong>{formatearNumero(conteoPlataforma.tiktok)}</strong></div>
+      </div>
+
+      <div className="attention-list temporal-attention-list">
+        {casosFiltrados.map((caso) => {
+          const usuario = leerTiempo(caso, ['usuarioComentario', 'usuario_comentario']);
+          const id = leerTiempo(caso, ['casoId', 'caso_id', 'id']);
+          const dias = leerNumero(caso, ['diasHabilesTranscurridos', 'dias_habiles_transcurridos']);
+          return (
+            <Link className="attention-item" key={id} to={`/reclamos/${encodeURIComponent(usuario)}/casos/${id}`}>
+              <div>
+                <strong>{usuario}</strong>
+                <span>{humanizarEnum(leerTiempo(caso, ['tipoIncidencia', 'tipo_incidencia']))}</span>
+              </div>
+              <div className="attention-meta">
+                <EstadoTiempoBadge estado={leerTiempo(caso, ['estadoTiempo', 'estado_tiempo'])} />
+                <small>{formatearNumero(dias)} días hábiles</small>
+              </div>
+            </Link>
+          );
+        })}
+        {!casosFiltrados.length && <div className="empty-box">Sin casos en {ETIQUETAS_ESTADO_TIEMPO[estadoTiempo] || 'el filtro seleccionado'}.</div>}
+      </div>
+    </section>
+  );
+}
+
 function VistaPerfilAdmin({ perfil, datos }) {
   const resumen = resumirLista(datos);
   const atencion = ordenarAtencion(datos).slice(0, 3);
@@ -233,7 +286,7 @@ function VistaPerfilAdmin({ perfil, datos }) {
           <h4>{etiquetaPerfil(perfil)}</h4>
           <p>{descripcionPerfil(perfil)}</p>
         </div>
-        <span className="badge badge-profile">{formatearNumero(resumen.pendientes)} pendientes</span>
+        <span className="badge badge-profile">{formatearNumero(resumen.altas)} alta+</span>
       </div>
       <div className="profile-preview-kpis">
         <div><span>Usuarios</span><strong>{formatearNumero(resumen.totalUsuarios)}</strong></div>
@@ -251,7 +304,7 @@ function VistaPerfilAdmin({ perfil, datos }) {
             <small>{formatearNumero(numero(fila, ['totalEventos', 'total_eventos'], 0))} eventos</small>
           </Link>
         ))}
-        {!atencion.length && <small>Sin casos pendientes.</small>}
+        {!atencion.length && <small>Sin casos para esta vista.</small>}
       </div>
     </article>
   );
@@ -303,6 +356,7 @@ export default function Dashboard() {
   const [resumenGlobal, setResumenGlobal] = useState({});
   const [usuariosReclamantes, setUsuariosReclamantes] = useState([]);
   const [usuariosInternos, setUsuariosInternos] = useState([]);
+  const [casosTemporales, setCasosTemporales] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
@@ -311,15 +365,17 @@ export default function Dashboard() {
     setError(null);
 
     try {
-      const [resumen, reclamantes, usuarios] = await Promise.all([
+      const [resumen, reclamantes, usuarios, temporales] = await Promise.all([
         obtenerResumenCasos().catch(() => ({})),
         listarUsuariosReclamantes().catch(() => []),
         esAdmin ? listarUsuarios().catch(() => []) : Promise.resolve([]),
+        listarCasosDerivacionPorFechas().catch(() => []),
       ]);
 
       setResumenGlobal(resumen || {});
       setUsuariosReclamantes(Array.isArray(reclamantes) ? reclamantes : []);
       setUsuariosInternos(Array.isArray(usuarios) ? usuarios : usuarios?.usuarios || usuarios?.content || []);
+      setCasosTemporales(Array.isArray(temporales) ? temporales : []);
     } catch (err) {
       setError(err);
     } finally {
@@ -375,9 +431,12 @@ export default function Dashboard() {
       <div className="grid-cards compact-cards dashboard-cards">
         <Card tone="violet" title="Usuarios" value={formatearNumero(resumenVista.totalUsuarios)} subtitle="Reclamantes visibles" />
         <Card tone="blue" title="Reclamos" value={formatearNumero(resumenVista.totalCasos)} subtitle="Casos agrupados" />
-        <Card tone="amber" title="Pendientes" value={formatearNumero(resumenVista.pendientes)} subtitle="Por revisar" />
         <Card tone="red" title="Alta prioridad" value={formatearNumero(resumenVista.altas)} subtitle="Alta o crítica" />
+        <Card tone="pink" title="Instagram" value={formatearNumero(contarPorPlataforma(casosTemporales).instagram)} subtitle="Casos temporales" />
+        <Card tone="cyan" title="TikTok" value={formatearNumero(contarPorPlataforma(casosTemporales).tiktok)} subtitle="Casos temporales" />
       </div>
+
+      <PanelTiempoOperativo casos={casosTemporales} />
 
       <div className="dashboard-operational-grid">
         <AtencionRecomendada datos={datosVisibles} />

@@ -3,7 +3,7 @@ package cl.duoc.grupo1.ms_reclamos.dto;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
-public record CasoDerivacionResumenResponse(
+public record CasoDerivacionFiltroFechaResponse(
         Long id,
         String usuarioComentario,
         String tipoIncidencia,
@@ -20,6 +20,9 @@ public record CasoDerivacionResumenResponse(
         BigDecimal confianza,
         OffsetDateTime fechaPrimerEvento,
         OffsetDateTime fechaUltimoEvento,
-        OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        Integer diasHabilesTranscurridos,
+        String estadoTiempo,
+        String plataforma,
+        String urlPublicacion,
+        String textoResumen
 ) {}

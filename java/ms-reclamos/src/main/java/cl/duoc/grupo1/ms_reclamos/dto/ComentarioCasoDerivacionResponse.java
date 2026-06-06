@@ -1,6 +1,6 @@
 package cl.duoc.grupo1.ms_reclamos.dto;
 
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
 
 public record ComentarioCasoDerivacionResponse(
         Long comentarioNegativoId,
@@ -12,11 +12,5 @@ public record ComentarioCasoDerivacionResponse(
         String textoComentario,
         String sentimiento,
         Integer puntaje,
-        Integer likes,
-        Integer replies,
-        OffsetDateTime fechaScraping,
-        String textoPublicacion,
-        String urlOrigen,
-        String rutaImagenLocal,
-        String urlImagenOriginal
+        LocalDate fechaComentario
 ) {}

@@ -45,7 +45,7 @@ function leerPromptDerivador() {
     return fs.readFileSync(rutaPrompt, 'utf8').trim();
   }
 
-  return 'Eres un derivador de reclamos para VTR Chile. Responde exclusivamente JSON válido.';
+  return 'Eres un clasificador de reclamos no formales provenientes de canales digitales. Responde exclusivamente JSON válido.';
 }
 
 const config = {

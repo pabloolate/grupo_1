@@ -5,6 +5,7 @@ require('dotenv').config();
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { chromium } = require('playwright');
+const { formatearFechaTiktok } = require('../utils/formateador_fechas');
 
 function normalizarTexto(valor) {
   return String(valor ?? '').replace(/\s+/g, ' ').trim();
@@ -553,6 +554,36 @@ async function extraerComentariosDesdePanelTikTok(page) {
       );
     };
 
+    const obtenerFechaComentarioRaw = (wrapper) => {
+      if (!wrapper) return '';
+
+      const contenedoresMetadata = Array.from(wrapper.querySelectorAll('[class*="DivCommentSubContentWrapper"], [class*="DivCommentSubContentSplitWrapper"]'));
+
+      for (const contenedor of contenedoresMetadata) {
+        const spans = Array.from(contenedor.querySelectorAll('span'));
+
+        for (const span of spans) {
+          const texto = limpiar(span.textContent || '');
+          if (!texto) continue;
+
+          // TikTok: YYYY-M-D o M-D. El M-D se interpreta con el año actual fuera del DOM.
+          if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(texto) || /^\d{1,2}-\d{1,2}$/.test(texto)) {
+            return texto;
+          }
+        }
+      }
+
+      const spans = Array.from(wrapper.querySelectorAll('span'));
+      for (const span of spans) {
+        const texto = limpiar(span.textContent || '');
+        if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(texto) || /^\d{1,2}-\d{1,2}$/.test(texto)) {
+          return texto;
+        }
+      }
+
+      return '';
+    };
+
     const nodosBase = Array.from(
       document.querySelectorAll(
         [
@@ -601,6 +632,7 @@ async function extraerComentariosDesdePanelTikTok(page) {
 
       const likesRaw = obtenerLikesComentario(wrapper);
       const repliesRaw = obtenerRepliesComentario(wrapper);
+      const fechaComentarioRaw = obtenerFechaComentarioRaw(wrapper);
 
       const indice = salida.length + 1;
 
@@ -609,6 +641,7 @@ async function extraerComentariosDesdePanelTikTok(page) {
         [`usuario_comentario_${indice}`]: usuarioComentario || null,
         [`likes_${indice}`]: likesRaw,
         [`replies_${indice}`]: repliesRaw,
+        [`fecha_comentario_raw_${indice}`]: fechaComentarioRaw || null,
       });
     }
 
@@ -661,9 +694,20 @@ async function scrapearTikTokVideoConPlaywright(video = {}) {
       await scrollearPanelComentariosTikTok(page);
     }
 
-    const comentarios = panelComentariosAbierto
+    const comentariosRaw = panelComentariosAbierto
       ? await extraerComentariosDesdePanelTikTok(page)
       : [];
+
+    const comentarios = comentariosRaw.map((comentario, index) => {
+      const id = String(index + 1);
+      const fechaRaw = comentario[`fecha_comentario_raw_${id}`] || comentario.fecha_comentario_raw || '';
+      const fechaComentario = formatearFechaTiktok(fechaRaw);
+
+      return {
+        ...comentario,
+        [`fecha_comentario_${id}`]: fechaComentario,
+      };
+    });
 
     console.log(
       `[TIKTOK][PLAYWRIGHT] raw_ui=${totalComentariosDetectados} panel=${panelComentariosAbierto} comentarios=${comentarios.length} link=${link}`

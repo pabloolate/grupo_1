@@ -16,6 +16,23 @@ const {
   marcarControlError,
 } = require('./repositorio_scraping');
 
+function crearResumenComentario(comentario) {
+  const texto = String(comentario.texto_comentario || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+
+  return {
+    control_id: comentario.control_id,
+    comentario_negativo_id: comentario.comentario_negativo_id,
+    plataforma: comentario.plataforma,
+    tipo_publicacion: comentario.tipo_publicacion,
+    usuario_comentario: comentario.usuario_comentario,
+    fecha_comentario: comentario.fecha_comentario,
+    texto,
+  };
+}
+
 async function obtenerAnalisisIa(comentario) {
   if (config.modoTest || !config.usarOllama) {
     return simularAnalisisIa(comentario);
@@ -131,16 +148,56 @@ async function procesarComentarioPendiente(comentario) {
 }
 
 async function procesarPendientes() {
+  console.log('[derivador_reclamos] Buscando comentarios pendientes para procesar...');
+
   const pendientes = await obtenerComentariosPendientes({
     limite: config.derivador.loteProceso,
   });
 
-  const resultados = [];
+  console.log('[derivador_reclamos] Pendientes encontrados para esta pasada:', pendientes.length);
 
-  for (const comentario of pendientes) {
+  if (pendientes.length === 0) {
+    console.log('[derivador_reclamos] No hay comentarios PENDIENTE para procesar.');
+    return [];
+  }
+
+  const resultados = [];
+  const inicioLote = Date.now();
+
+  for (let indice = 0; indice < pendientes.length; indice += 1) {
+    const comentario = pendientes[indice];
+    const numeroActual = indice + 1;
+    const inicioComentario = Date.now();
+
+    console.log(
+      `[derivador_reclamos] Procesando ${numeroActual}/${pendientes.length}:`,
+      crearResumenComentario(comentario)
+    );
+
     const resultado = await procesarComentarioPendiente(comentario);
     resultados.push(resultado);
+
+    const segundosComentario = ((Date.now() - inicioComentario) / 1000).toFixed(2);
+    const segundosLote = ((Date.now() - inicioLote) / 1000).toFixed(2);
+
+    if (resultado.ok) {
+      console.log(
+        `[derivador_reclamos] OK ${numeroActual}/${pendientes.length} control=${resultado.control_id} comentario=${resultado.comentario_negativo_id} estado=${resultado.estado_control} tipo=${resultado.tipo_incidencia || ''} reclamo=${resultado.reclamo_id || ''} tiempo=${segundosComentario}s total=${segundosLote}s`
+      );
+    } else {
+      console.log(
+        `[derivador_reclamos] ERROR ${numeroActual}/${pendientes.length} control=${resultado.control_id} comentario=${resultado.comentario_negativo_id} error=${resultado.error} tiempo=${segundosComentario}s total=${segundosLote}s`
+      );
+    }
   }
+
+  const totalOk = resultados.filter((resultado) => resultado.ok).length;
+  const totalError = resultados.filter((resultado) => !resultado.ok).length;
+  const totalSegundos = ((Date.now() - inicioLote) / 1000).toFixed(2);
+
+  console.log(
+    `[derivador_reclamos] Lote procesado. total=${resultados.length} ok=${totalOk} error=${totalError} tiempo_total=${totalSegundos}s`
+  );
 
   return resultados;
 }

@@ -5,7 +5,7 @@ import Loading from '../components/ui/Loading.jsx';
 import Card from '../components/ui/Card.jsx';
 import EstadoBadge from '../components/reclamos/EstadoBadge.jsx';
 import PrioridadBadge from '../components/reclamos/PrioridadBadge.jsx';
-import { formatearFecha } from '../utils/fechas.js';
+import { formatearFechaDia } from '../utils/fechas.js';
 import { leerCampo, formatearNumero } from '../utils/campos.js';
 import { codigoCaso, humanizarEnum, normalizarUrlEvidencia } from '../utils/etiquetas.js';
 import { obtenerCasosUsuarioReclamante, obtenerComentariosUsuarioReclamante } from '../services/usuariosReclamantesService.js';
@@ -47,8 +47,6 @@ export default function UsuarioReclamanteDetalle() {
   const resumen = useMemo(() => ({
     casos: casos.length,
     eventos: casos.reduce((acc, caso) => acc + Number(leer(caso, ['cantidadEventos', 'cantidad_eventos'], 0) || 0), 0),
-    pendientes: casos.filter((caso) => ['ABIERTO', 'DERIVADO', 'EN_GESTION', 'ESCALADO'].includes(String(leer(caso, ['estadoCaso', 'estado_caso'])).toUpperCase())).length,
-    revisados: casos.filter((caso) => ['CERRADO', 'DESCARTADO'].includes(String(leer(caso, ['estadoCaso', 'estado_caso'])).toUpperCase())).length,
   }), [casos]);
 
   if (cargando) return <Loading />;
@@ -72,8 +70,6 @@ export default function UsuarioReclamanteDetalle() {
       <div className="grid-cards compact-cards">
         <Card tone="blue" title="Casos" value={formatearNumero(resumen.casos)} subtitle="Tipos agrupados" />
         <Card tone="cyan" title="Eventos" value={formatearNumero(resumen.eventos)} subtitle="Evidencias" />
-        <Card tone="amber" title="Pendientes" value={formatearNumero(resumen.pendientes)} subtitle="Por revisión" />
-        <Card tone="green" title="Revisados" value={formatearNumero(resumen.revisados)} subtitle="Cerrados/descartados" />
       </div>
 
       <section className="panel compact-panel">
@@ -103,7 +99,7 @@ export default function UsuarioReclamanteDetalle() {
                     <td><PrioridadBadge prioridad={leer(caso, ['prioridad'])} /></td>
                     <td><EstadoBadge estado={leer(caso, ['estadoCaso', 'estado_caso'])} /></td>
                     <td>{leer(caso, ['cantidadEventos', 'cantidad_eventos'], 0)}</td>
-                    <td>{formatearFecha(leer(caso, ['fechaUltimoEvento', 'fecha_ultimo_evento']))}</td>
+                    <td>{formatearFechaDia(leer(caso, ['fechaUltimoEvento', 'fecha_ultimo_evento']))}</td>
                     <td>
                       <Link className="btn btn-primary btn-table-action" to={`/reclamos/${encodeURIComponent(usuarioDecodificado)}/casos/${id}`}>
                         Ver caso
@@ -127,7 +123,7 @@ export default function UsuarioReclamanteDetalle() {
               <article className="evidence-card" key={`${leer(comentario, ['comentarioNegativoId', 'comentario_negativo_id', 'id'])}-${url}`}>
                 <div className="evidence-head">
                   <strong>{humanizarEnum(leer(comentario, ['plataforma']))} · {humanizarEnum(leer(comentario, ['tipoPublicacion', 'tipo_publicacion']))}</strong>
-                  <span>{formatearFecha(leer(comentario, ['fechaScraping', 'fecha_scraping']))}</span>
+                  <span>{formatearFechaDia(leer(comentario, ['fechaComentario', 'fecha_comentario']))}</span>
                 </div>
                 <p>{leer(comentario, ['textoComentario', 'texto_comentario'])}</p>
                 {url && (

@@ -13,9 +13,7 @@ function construirPromptUsuario(comentario) {
       texto_comentario: comentario.texto_comentario,
       sentimiento: comentario.sentimiento,
       puntaje: comentario.puntaje,
-      likes: comentario.likes,
-      replies: comentario.replies,
-      fecha_scraping: comentario.fecha_scraping,
+      fecha_comentario: comentario.fecha_comentario,
     }, null, 2),
   ].join('\n');
 }
